@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ACP Chat — UI Redesign Mockup</title>
+  <style>
+    /* ─── Reset & tokens ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #1e1e2e;
+      --surface:     #181825;
+      --surface2:    #11111b;
+      --border:      #313244;
+      --accent:      #cba6f7;
+      --accent2:     #89b4fa;
+      --accent3:     #a6e3a1;
+      --user-bubble: #45475a;
+      --text:        #cdd6f4;
+      --subtext:     #a6adc8;
+      --muted:       #6c7086;
+      --danger:      #f38ba8;
+      --warn:        #fab387;
+      --radius-sm:   6px;
+      --radius:      10px;
+      --radius-lg:   14px;
+      font-family: 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    body {
+      background: #0d0d1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 48px;
+      padding: 40px;
+      flex-wrap: wrap;
+    }
+
+    /* ─── Annotation labels ───────────────────────────────────────────── */
+    .frame-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .frame-label {
+      color: #a6adc8;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ─── Phone/IDE frame shell ───────────────────────────────────────── */
+    .app-frame {
+      width: 360px;
+      height: 700px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 80px rgba(0,0,0,.6);
+    }
+    .app-frame.wide {
+      width: 420px;
+      height: 700px;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       SCREEN 1 — Login
+    ══════════════════════════════════════════════════════════════════ */
+    .login-screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 28px;
+      gap: 28px;
+      background: var(--surface);
+    }
+
+    .login-logo {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .login-logo .logo-icon {
+      width: 52px; height: 52px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px;
+    }
+    .login-logo .logo-name {
+      font-size: 1.4em;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .login-logo .logo-sub {
+      font-size: 0.82em;
+      color: var(--subtext);
+      margin-top: -4px;
+    }
+
+    .login-form {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-field label {
+      font-size: 0.82em;
+      color: var(--subtext);
+      font-weight: 500;
+    }
+    .form-field input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 9px 12px;
+      font-size: 0.9em;
+      outline: none;
+    }
+    .form-field input:focus {
+      border-color: var(--accent);
+    }
+
+    .btn-primary {
+      width: 100%;
+      background: var(--accent);
+      color: #1e1e2e;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 11px;
+      font-size: 0.9em;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+    }
+    .btn-primary:hover { filter: brightness(1.08); }
+
+    .login-divider {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      color: var(--muted); font-size: 0.78em;
+    }
+    .login-divider::before, .login-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    .oauth-btns { display: flex; gap: 10px; width: 100%; }
+    .btn-oauth {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 9px 8px;
+      font-size: 0.82em;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-oauth:hover { border-color: var(--accent); }
+
+    .login-codex-note {
+      background: rgba(166,227,161,0.08);
+      border: 1px solid rgba(166,227,161,0.3);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: 0.8em;
+      color: var(--accent3);
+      display: flex; align-items: flex-start; gap: 8px;
+      width: 100%;
+    }
+    .login-codex-note .note-icon { flex-shrink: 0; margin-top: 1px; }
+
+    /* ══════════════════════════════════════════════════════════════════
+       SCREEN 2 — Main Chat (with tabs)
+    ══════════════════════════════════════════════════════════════════ */
+
+    /* ─── Top header ─────────────────────────────────────────────────── */
+    .main-header {
+      flex-shrink: 0;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      height: 42px;
+      gap: 6px;
+    }
+    .header-logo {
+      font-size: 0.72em;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      opacity: 0.8;
+      flex-shrink: 0;
+      margin-right: 4px;
+    }
+    .header-spacer { flex: 1; }
+    .header-btn {
+      width: 28px; height: 28px;
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--subtext);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 15px;
+      position: relative;
+    }
+    .header-btn:hover { background: var(--user-bubble); color: var(--text); }
+    .header-btn.accent-btn {
+      background: rgba(203,166,247,0.15);
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: 300;
+    }
+    .header-btn.accent-btn:hover {
+      background: rgba(203,166,247,0.3);
+    }
+    .header-btn .badge {
+      position: absolute;
+      top: 3px; right: 3px;
+      width: 7px; height: 7px;
+      background: var(--accent3);
+      border-radius: 50%;
+      border: 1px solid var(--surface2);
+    }
+    .avatar-btn {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; color: #1e1e2e;
+      flex-shrink: 0;
+    }
+
+    /* ─── Tab bar ─────────────────────────────────────────────────────── */
+    .tab-bar {
+      flex-shrink: 0;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+      scrollbar-width: none;
+      height: 36px;
+    }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px;
+      min-width: 90px;
+      max-width: 160px;
+      border-right: 1px solid var(--border);
+      font-size: 0.82em;
+      color: var(--muted);
+      cursor: pointer;
+      position: relative;
+      user-select: none;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .tab:hover { color: var(--subtext); background: rgba(255,255,255,0.03); }
+    .tab.active {
+      color: var(--text);
+      background: var(--surface);
+    }
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+    }
+    .tab .tab-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent3);
+      flex-shrink: 0;
+    }
+    .tab .tab-dot.warn { background: var(--warn); }
+    .tab .tab-dot.idle { background: var(--muted); }
+    .tab .tab-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab .tab-close {
+      flex-shrink: 0;
+      width: 14px; height: 14px;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0;
+      border-radius: 3px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .tab:hover .tab-close { opacity: 1; }
+    .tab .tab-close:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+
+    /* ─── Connected banner ───────────────────────────────────────────── */
+    .connected-banner {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px;
+      background: rgba(166,227,161,0.06);
+      border-bottom: 1px solid rgba(166,227,161,0.2);
+      font-size: 0.79em;
+    }
+    .connected-banner .cb-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent3);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%,100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+    .connected-banner .cb-text { color: var(--accent3); font-weight: 500; }
+    .connected-banner .cb-detail { color: var(--muted); margin-left: auto; }
+
+    /* ─── Messages area ─────────────────────────────────────────────── */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    /* User bubble */
+    .msg-user {
+      align-self: flex-end;
+      background: var(--user-bubble);
+      border-radius: var(--radius) var(--radius) 3px var(--radius);
+      padding: 9px 13px;
+      max-width: 88%;
+      line-height: 1.5;
+      font-size: 0.9em;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg-user .attachment-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 0.82em;
+      margin-top: 5px;
+      color: var(--subtext);
+    }
+    .msg-user .attachment-pill::before { content: '📎'; font-size: 11px; }
+
+    /* Turn container (assistant) */
+    .turn {
+      align-self: flex-start;
+      max-width: 96%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .turn-agent-label {
+      font-size: 0.75em;
+      color: var(--muted);
+      margin-bottom: 2px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .turn-agent-label .al-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    /* Thinking block */
+    .think-block {
+      background: rgba(137,180,250,0.05);
+      border: 1px solid rgba(137,180,250,0.18);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+    }
+    .think-header {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 0.8em;
+      color: var(--accent2);
+      user-select: none;
+    }
+    .think-header .th-chevron { font-size: 10px; transition: transform 0.15s; }
+    .think-header .th-label { font-weight: 500; }
+    .think-header .th-time { margin-left: auto; color: var(--muted); }
+    .think-header .th-pulse {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent2);
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
+    .think-body {
+      padding: 8px 12px 10px;
+      font-size: 0.82em;
+      color: var(--subtext);
+      font-style: italic;
+      line-height: 1.55;
+      border-top: 1px solid rgba(137,180,250,0.12);
+      white-space: pre-wrap;
+    }
+
+    /* Tool call row */
+    .tool-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 0.82em;
+    }
+    .tool-row .tr-icon { font-size: 13px; flex-shrink: 0; }
+    .tool-row .tr-name { flex: 1; color: var(--subtext); }
+    .tool-row .tr-name em { color: var(--text); font-style: normal; font-weight: 500; }
+    .tool-row .tr-status {
+      font-size: 0.78em;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+    .tr-status.running { background: rgba(137,180,250,0.15); color: var(--accent2); }
+    .tr-status.done    { background: rgba(166,227,161,0.12); color: var(--accent3); }
+    .tr-status.err     { background: rgba(243,139,168,0.12); color: var(--danger); }
+
+    /* Assistant text bubble */
+    .msg-ai {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 3px var(--radius) var(--radius) var(--radius);
+      padding: 9px 13px;
+      line-height: 1.6;
+      font-size: 0.9em;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg-ai code {
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-size: 0.88em;
+      background: rgba(255,255,255,0.07);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .msg-ai pre {
+      background: rgba(0,0,0,0.35);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      margin: 6px 0;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      font-size: 0.85em;
+    }
+    .msg-ai pre code { background: none; padding: 0; }
+
+    /* Streaming cursor */
+    .cursor-blink {
+      display: inline-block;
+      width: 2px; height: 13px;
+      background: var(--accent);
+      animation: blink 1s step-end infinite;
+      vertical-align: text-bottom;
+      margin-left: 1px;
+      border-radius: 1px;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* Error message */
+    .msg-error {
+      align-self: center;
+      background: rgba(243,139,168,0.1);
+      border: 1px solid rgba(243,139,168,0.3);
+      border-radius: var(--radius-sm);
+      padding: 7px 12px;
+      color: var(--danger);
+      font-size: 0.84em;
+      text-align: center;
+    }
+
+    /* ─── History panel (slide-in overlay) ──────────────────────────── */
+    .history-panel {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: var(--surface);
+      z-index: 20;
+      display: flex; flex-direction: column;
+    }
+    .history-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .history-header h3 { flex: 1; font-size: 0.95em; font-weight: 600; }
+    .history-close {
+      width: 26px; height: 26px;
+      background: transparent; border: none; color: var(--muted);
+      border-radius: var(--radius-sm); cursor: pointer; font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .history-search {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .history-search input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 0.85em;
+      outline: none;
+    }
+    .history-search input:focus { border-color: var(--accent); }
+    .history-list {
+      flex: 1; overflow-y: auto; padding: 8px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .history-group-label {
+      font-size: 0.72em;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      padding: 6px 8px 4px;
+      font-weight: 600;
+    }
+    .history-item {
+      display: flex; flex-direction: column; gap: 2px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .history-item:hover { background: var(--surface2); }
+    .history-item.active { background: rgba(203,166,247,0.1); }
+    .hi-top { display: flex; align-items: center; gap: 7px; }
+    .hi-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .hi-dot.codex { background: var(--accent); }
+    .hi-dot.other { background: var(--accent2); }
+    .hi-title { flex: 1; font-size: 0.87em; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hi-time { font-size: 0.75em; color: var(--muted); flex-shrink: 0; }
+    .hi-preview { font-size: 0.78em; color: var(--muted); padding-left: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ─── Composer ───────────────────────────────────────────────────── */
+    .composer-wrap {
+      flex-shrink: 0;
+      padding: 8px 10px 12px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    .composer {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .composer:focus-within { border-color: rgba(203,166,247,0.5); }
+
+    .composer-attachments {
+      padding: 8px 12px 0;
+      display: flex; flex-wrap: wrap; gap: 5px;
+    }
+    .attach-pill {
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 3px 8px;
+      font-size: 0.78em;
+      color: var(--subtext);
+    }
+    .attach-pill .ap-remove {
+      font-size: 11px; color: var(--muted); cursor: pointer; margin-left: 2px;
+    }
+    .attach-pill .ap-remove:hover { color: var(--danger); }
+
+    .composer-input {
+      padding: 10px 12px 6px;
+      min-height: 40px;
+      max-height: 140px;
+      overflow-y: auto;
+      outline: none;
+      line-height: 1.5;
+      font-size: 0.9em;
+      color: var(--text);
+      caret-color: var(--accent);
+    }
+    .composer-input:empty::before {
+      content: attr(data-placeholder);
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    .composer-toolbar {
+      display: flex; align-items: center;
+      padding: 5px 8px 7px;
+      gap: 4px;
+    }
+    .toolbar-btn {
+      height: 28px;
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      cursor: pointer;
+      display: flex; align-items: center; gap: 5px;
+      font-size: 0.8em;
+      padding: 0 7px;
+    }
+    .toolbar-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+    .toolbar-btn .tb-icon { font-size: 14px; }
+    .toolbar-btn.active { color: var(--accent); }
+
+    .mode-chip {
+      display: flex; align-items: center; gap: 4px;
+      height: 24px;
+      background: rgba(203,166,247,0.1);
+      border: 1px solid rgba(203,166,247,0.25);
+      border-radius: 20px;
+      padding: 0 9px;
+      font-size: 0.76em;
+      color: var(--accent);
+      cursor: pointer;
+    }
+    .mode-chip:hover { background: rgba(203,166,247,0.18); }
+    .mode-chip .mc-arrow { font-size: 9px; opacity: 0.7; }
+
+    .spacer-flex { flex: 1; }
+
+    .send-btn {
+      width: 30px; height: 30px;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      color: #1e1e2e;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .send-btn:hover { filter: brightness(1.1); }
+    .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .send-btn.cancel {
+      background: rgba(243,139,168,0.15);
+      border: 1px solid rgba(243,139,168,0.3);
+      color: var(--danger);
+    }
+
+    /* ─── Mode selector dropdown (shown as popup) ───────────────────── */
+    .mode-dropdown {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px;
+      min-width: 200px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+      z-index: 10;
+    }
+    .mode-option {
+      display: flex; align-items: flex-start; gap: 9px;
+      padding: 8px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+    .mode-option:hover { background: rgba(255,255,255,0.05); }
+    .mode-option.selected { background: rgba(203,166,247,0.1); }
+    .mo-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+    .mo-info { display: flex; flex-direction: column; gap: 2px; }
+    .mo-name { font-size: 0.85em; font-weight: 600; }
+    .mo-desc { font-size: 0.76em; color: var(--muted); }
+    .mo-check { margin-left: auto; color: var(--accent); font-size: 13px; flex-shrink: 0; }
+
+    /* ─── Annotations overlay (design doc callouts) ──────────────────── */
+    .annotations {
+      position: relative;
+    }
+    .callout {
+      position: absolute;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      background: rgba(203,166,247,0.9);
+      color: #1e1e2e;
+      border-radius: 3px;
+      padding: 2px 6px;
+      white-space: nowrap;
+      z-index: 30;
+    }
+    .callout-line {
+      position: absolute;
+      border: 1px dashed rgba(203,166,247,0.5);
+      z-index: 29;
+    }
+
+    /* ─── Utility ────────────────────────────────────────────────────── */
+    .relative { position: relative; }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════
+     FRAME 1 — Login Screen
+════════════════════════════════════════════════ -->
+<div class="frame-wrapper">
+  <div class="frame-label">① Login Screen</div>
+  <div class="app-frame">
+    <div class="login-screen">
+
+      <div class="login-logo">
+        <div class="logo-icon">🤖</div>
+        <div class="logo-name">ACP Chat</div>
+        <div class="logo-sub">Agent Client Protocol</div>
+      </div>
+
+      <div class="login-form">
+        <div class="form-field">
+          <label>Email</label>
+          <input type="email" value="user@example.com" />
+        </div>
+        <div class="form-field">
+          <label>Password</label>
+          <input type="password" value="••••••••••" />
+        </div>
+        <button class="btn-primary">Sign In</button>
+      </div>
+
+      <div class="login-divider">or continue with</div>
+
+      <div class="oauth-btns">
+        <button class="btn-oauth">
+          <span>🐙</span> GitHub
+        </button>
+        <button class="btn-oauth">
+          <span>🔷</span> Google
+        </button>
+      </div>
+
+      <div class="login-codex-note">
+        <span class="note-icon">⚡</span>
+        <span>登录后将自动连接 <strong>Codex CLI</strong>，无需手动配置 agent。</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════
+     FRAME 2 — Main Chat (Streaming)
+════════════════════════════════════════════════ -->
+<div class="frame-wrapper">
+  <div class="frame-label">② Main Chat — Active Session (Streaming)</div>
+  <div class="app-frame wide annotations">
+
+    <!-- ① Top header -->
+    <div class="main-header">
+      <span class="header-logo">ACP</span>
+      <div class="header-spacer"></div>
+      <!-- History button -->
+      <button class="header-btn" title="Session History">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+        </svg>
+        <span class="badge"></span>
+      </button>
+      <!-- New Agent (+) button -->
+      <button class="header-btn accent-btn" title="New Agent Tab">
+        ＋
+      </button>
+      <!-- Avatar / account -->
+      <button class="avatar-btn" title="Account">xU</button>
+    </div>
+
+    <!-- ② Tab bar -->
+    <div class="tab-bar">
+      <div class="tab active">
+        <span class="tab-dot"></span>
+        <span class="tab-title">Fix null-ref in auth</span>
+        <span class="tab-close">✕</span>
+      </div>
+      <div class="tab">
+        <span class="tab-dot warn"></span>
+        <span class="tab-title">Refactor API layer</span>
+        <span class="tab-close">✕</span>
+      </div>
+      <div class="tab">
+        <span class="tab-dot idle"></span>
+        <span class="tab-title">Add dark mode</span>
+        <span class="tab-close">✕</span>
+      </div>
+    </div>
+
+    <!-- ③ Codex connection banner -->
+    <div class="connected-banner">
+      <span class="cb-dot"></span>
+      <span class="cb-text">codex-cli</span>
+      <span style="color:var(--muted); font-size:0.78em; margin-left:4px;">connected</span>
+      <span class="cb-detail">~/projects/auth-service</span>
+    </div>
+
+    <!-- ④ Messages -->
+    <div class="messages">
+
+      <!-- User message with attachment -->
+      <div class="msg-user">
+        帮我找一下 src/auth 下 null reference 的来源，并且修复它。
+        <div><span class="attachment-pill">src/auth/middleware.ts</span></div>
+      </div>
+
+      <!-- Assistant turn: thinking + tools + text -->
+      <div class="turn">
+        <div class="turn-agent-label">
+          <span class="al-dot"></span> codex-cli
+        </div>
+
+        <!-- Thinking block (expanded) -->
+        <div class="think-block">
+          <div class="think-header">
+            <span class="th-chevron">▾</span>
+            <span class="th-label">Thinking</span>
+            <span class="th-time">2.4s</span>
+          </div>
+          <div class="think-body">Let me analyze the authentication middleware. The error likely occurs when `req.user` is accessed before the JWT verification completes. I should check if there's a missing null guard around line 47…</div>
+        </div>
+
+        <!-- Tool calls -->
+        <div class="tool-row">
+          <span class="tr-icon">📂</span>
+          <span class="tr-name"><em>read_file</em> src/auth/middleware.ts</span>
+          <span class="tr-status done">✓ done</span>
+        </div>
+        <div class="tool-row">
+          <span class="tr-icon">🔍</span>
+          <span class="tr-name"><em>grep</em> "req.user" src/auth/</span>
+          <span class="tr-status done">✓ done</span>
+        </div>
+        <div class="tool-row">
+          <span class="tr-icon">✏️</span>
+          <span class="tr-name"><em>edit_file</em> src/auth/middleware.ts:47</span>
+          <span class="tr-status running">running</span>
+        </div>
+
+        <!-- Assistant text (streaming) -->
+        <div class="msg-ai">找到了问题所在。<code>middleware.ts</code> 第 47 行在 JWT 解码失败时没有提前返回，导致后续 <code>req.user.id</code> 报 null reference。
+
+修复方案：在 <code>verify</code> 回调中加入 null guard：
+
+<pre><code>if (err || !decoded) {
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+req.user = decoded;</code></pre>
+正在应用变更…<span class="cursor-blink"></span></div>
+      </div>
+
+    </div>
+
+    <!-- ⑤ Composer -->
+    <div class="composer-wrap relative">
+      <div class="composer">
+        <div class="composer-attachments">
+          <div class="attach-pill">
+            middleware.ts <span class="ap-remove">✕</span>
+          </div>
+        </div>
+        <div class="composer-input"
+             contenteditable="true"
+             data-placeholder="向 codex-cli 发消息…">
+        </div>
+        <div class="composer-toolbar">
+          <!-- Attachment -->
+          <button class="toolbar-btn" title="Attach file">
+            <span class="tb-icon">📎</span>
+          </button>
+          <!-- Mode selector -->
+          <div class="mode-chip">
+            ⚡ Auto <span class="mc-arrow">▾</span>
+          </div>
+          <!-- Model -->
+          <button class="toolbar-btn" title="Switch model" style="font-size:0.76em;">
+            gpt-4o
+          </button>
+          <div class="spacer-flex"></div>
+          <!-- Cancel (active while streaming) -->
+          <button class="send-btn cancel" title="Cancel">■</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Annotation callouts -->
+    <div class="callout" style="top:8px; right:45px;">① 历史</div>
+    <div class="callout" style="top:8px; right:6px; background:rgba(166,227,161,0.9);">② +Agent</div>
+    <div class="callout" style="top:44px; left:6px;">③ 对话 Tabs（自动命名）</div>
+    <div class="callout" style="top:82px; left:6px; background:rgba(166,227,161,0.9);">④ Codex 自动连接</div>
+    <div class="callout" style="top:134px; right:6px; background:rgba(137,180,250,0.9);">⑤ Thinking block</div>
+    <div class="callout" style="top:186px; right:6px; background:rgba(137,180,250,0.9);">⑥ Tool operations</div>
+    <div class="callout" style="bottom:136px; left:6px;">⑦ 附件 Pill</div>
+    <div class="callout" style="bottom:82px; left:6px;">⑧ 模式选择</div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════
+     FRAME 3 — History Panel
+════════════════════════════════════════════════ -->
+<div class="frame-wrapper">
+  <div class="frame-label">③ History Panel (历史会话)</div>
+  <div class="app-frame">
+
+    <div class="main-header">
+      <span class="header-logo">ACP</span>
+      <div class="header-spacer"></div>
+      <button class="header-btn accent-btn">＋</button>
+      <button class="avatar-btn">xU</button>
+    </div>
+
+    <div style="position:relative; flex:1; display:flex; flex-direction:column; overflow:hidden;">
+      <!-- Dimmed chat behind panel -->
+      <div style="position:absolute; inset:0; background:rgba(0,0,0,0.5); z-index:19;"></div>
+
+      <!-- History slide-in panel -->
+      <div class="history-panel">
+        <div class="history-header">
+          <span style="font-size:16px;">📋</span>
+          <h3>Session History</h3>
+          <button class="history-close">✕</button>
+        </div>
+        <div class="history-search">
+          <input placeholder="🔍  搜索会话…" value="" />
+        </div>
+        <div class="history-list">
+
+          <div class="history-group-label">Today</div>
+
+          <div class="history-item active">
+            <div class="hi-top">
+              <span class="hi-dot codex"></span>
+              <span class="hi-title">Fix null-ref in auth middleware</span>
+              <span class="hi-time">14:32</span>
+            </div>
+            <div class="hi-preview">帮我找一下 src/auth 下 null reference…</div>
+          </div>
+
+          <div class="history-item">
+            <div class="hi-top">
+              <span class="hi-dot codex"></span>
+              <span class="hi-title">Refactor API layer to async/await</span>
+              <span class="hi-time">11:05</span>
+            </div>
+            <div class="hi-preview">把所有 callback 风格改为 async/await</div>
+          </div>
+
+          <div class="history-group-label">Yesterday</div>
+
+          <div class="history-item">
+            <div class="hi-top">
+              <span class="hi-dot other"></span>
+              <span class="hi-title">Add dark mode support</span>
+              <span class="hi-time">16:20</span>
+            </div>
+            <div class="hi-preview">给整个项目加暗色主题，使用 CSS variables</div>
+          </div>
+
+          <div class="history-item">
+            <div class="hi-top">
+              <span class="hi-dot other"></span>
+              <span class="hi-title">Write unit tests for UserService</span>
+              <span class="hi-time">09:44</span>
+            </div>
+            <div class="hi-preview">为 UserService 写完整的 Jest 测试覆盖</div>
+          </div>
+
+          <div class="history-group-label">May 28</div>
+
+          <div class="history-item">
+            <div class="hi-top">
+              <span class="hi-dot codex"></span>
+              <span class="hi-title">Setup CI/CD pipeline</span>
+              <span class="hi-time">15:10</span>
+            </div>
+            <div class="hi-preview">用 GitHub Actions 搭建 CI 流程</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════
+     FRAME 4 — Mode Selector Popup
+════════════════════════════════════════════════ -->
+<div class="frame-wrapper">
+  <div class="frame-label">④ Mode Selector + Composer Detail</div>
+  <div class="app-frame">
+
+    <div class="main-header">
+      <span class="header-logo">ACP</span>
+      <div class="header-spacer"></div>
+      <button class="header-btn">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+        </svg>
+      </button>
+      <button class="header-btn accent-btn">＋</button>
+      <button class="avatar-btn">xU</button>
+    </div>
+
+    <div class="tab-bar">
+      <div class="tab active">
+        <span class="tab-dot"></span>
+        <span class="tab-title">Fix null-ref in auth</span>
+        <span class="tab-close">✕</span>
+      </div>
+    </div>
+
+    <div class="connected-banner">
+      <span class="cb-dot"></span>
+      <span class="cb-text">codex-cli</span>
+      <span style="color:var(--muted); font-size:0.78em; margin-left:4px;">connected</span>
+      <span class="cb-detail">~/projects/auth-service</span>
+    </div>
+
+    <div class="messages" style="justify-content:flex-end;">
+      <div class="msg-user">帮我重构 UserService</div>
+      <div class="turn">
+        <div class="turn-agent-label"><span class="al-dot"></span> codex-cli</div>
+        <div class="msg-ai">好的，我来分析当前的 <code>UserService</code> 结构…</div>
+      </div>
+    </div>
+
+    <!-- Composer with mode popup open -->
+    <div class="composer-wrap relative">
+
+      <!-- Mode dropdown popup -->
+      <div class="mode-dropdown">
+        <div class="mode-option selected">
+          <span class="mo-icon">⚡</span>
+          <div class="mo-info">
+            <span class="mo-name">Auto</span>
+            <span class="mo-desc">自动选择最佳策略</span>
+          </div>
+          <span class="mo-check">✓</span>
+        </div>
+        <div class="mode-option">
+          <span class="mo-icon">🔍</span>
+          <div class="mo-info">
+            <span class="mo-name">Plan</span>
+            <span class="mo-desc">先规划再执行</span>
+          </div>
+        </div>
+        <div class="mode-option">
+          <span class="mo-icon">✏️</span>
+          <div class="mo-info">
+            <span class="mo-name">Edit</span>
+            <span class="mo-desc">仅修改代码，不运行</span>
+          </div>
+        </div>
+        <div class="mode-option">
+          <span class="mo-icon">🚀</span>
+          <div class="mo-info">
+            <span class="mo-name">Full Auto</span>
+            <span class="mo-desc">完全自主，无需确认</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-input"
+             contenteditable="true"
+             data-placeholder="向 codex-cli 发消息…">
+        </div>
+        <div class="composer-toolbar">
+          <button class="toolbar-btn">
+            <span class="tb-icon">📎</span>
+          </button>
+          <div class="mode-chip active" style="background:rgba(203,166,247,0.25); border-color:var(--accent);">
+            ⚡ Auto <span class="mc-arrow">▴</span>
+          </div>
+          <button class="toolbar-btn" style="font-size:0.76em;">gpt-4o</button>
+          <div class="spacer-flex"></div>
+          <button class="send-btn">↑</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════
+     FRAME 5 — Empty / New Agent State
+════════════════════════════════════════════════ -->
+<div class="frame-wrapper">
+  <div class="frame-label">⑤ New Tab — Agent Selection</div>
+  <div class="app-frame">
+
+    <div class="main-header">
+      <span class="header-logo">ACP</span>
+      <div class="header-spacer"></div>
+      <button class="header-btn">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+        </svg>
+      </button>
+      <button class="header-btn accent-btn">＋</button>
+      <button class="avatar-btn">xU</button>
+    </div>
+
+    <div class="tab-bar">
+      <div class="tab">
+        <span class="tab-dot idle"></span>
+        <span class="tab-title">Fix null-ref…</span>
+        <span class="tab-close">✕</span>
+      </div>
+      <div class="tab active" style="min-width:80px;">
+        <span class="tab-dot" style="background:var(--muted)"></span>
+        <span class="tab-title">New chat</span>
+        <span class="tab-close">✕</span>
+      </div>
+    </div>
+
+    <!-- Empty state — agent picker -->
+    <div class="messages" style="align-items:center; justify-content:center; gap:20px;">
+      <div style="text-align:center; max-width:280px;">
+        <div style="font-size:32px; margin-bottom:10px;">🤖</div>
+        <div style="font-size:1em; font-weight:600; margin-bottom:6px;">Choose an Agent</div>
+        <div style="font-size:0.83em; color:var(--muted); line-height:1.5;">
+          选择一个 agent 开始对话，或直接输入使用默认 codex-cli。
+        </div>
+      </div>
+
+      <!-- Agent cards -->
+      <div style="width:100%; display:flex; flex-direction:column; gap:6px; padding:0 4px;">
+
+        <div style="
+          background:rgba(203,166,247,0.08);
+          border:1px solid rgba(203,166,247,0.3);
+          border-radius:var(--radius);
+          padding:10px 14px;
+          cursor:pointer;
+          display:flex; align-items:center; gap:12px;
+        ">
+          <span style="font-size:20px;">⚡</span>
+          <div>
+            <div style="font-size:0.9em; font-weight:600;">codex-cli</div>
+            <div style="font-size:0.78em; color:var(--muted);">OpenAI Codex — 已连接</div>
+          </div>
+          <span style="margin-left:auto; font-size:0.75em; color:var(--accent3);">● connected</span>
+        </div>
+
+        <div style="
+          background:var(--surface2);
+          border:1px solid var(--border);
+          border-radius:var(--radius);
+          padding:10px 14px;
+          cursor:pointer;
+          display:flex; align-items:center; gap:12px;
+          opacity:0.6;
+        ">
+          <span style="font-size:20px;">🦙</span>
+          <div>
+            <div style="font-size:0.9em; font-weight:600;">ollama-local</div>
+            <div style="font-size:0.78em; color:var(--muted);">Local LLM — disconnected</div>
+          </div>
+          <span style="margin-left:auto; font-size:0.75em; color:var(--muted);">○ offline</span>
+        </div>
+
+        <div style="
+          background:var(--surface2);
+          border:1px dashed var(--border);
+          border-radius:var(--radius);
+          padding:10px 14px;
+          cursor:pointer;
+          display:flex; align-items:center; gap:12px;
+          color:var(--muted);
+        ">
+          <span style="font-size:20px;">＋</span>
+          <div style="font-size:0.88em;">Connect a new agent…</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer">
+        <div class="composer-input" contenteditable="true" data-placeholder="向 codex-cli 发消息，或先选择 agent…"></div>
+        <div class="composer-toolbar">
+          <button class="toolbar-btn"><span class="tb-icon">📎</span></button>
+          <div class="mode-chip">⚡ Auto <span class="mc-arrow">▾</span></div>
+          <div class="spacer-flex"></div>
+          <button class="send-btn" disabled>↑</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
