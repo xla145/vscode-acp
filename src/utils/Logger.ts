@@ -25,6 +25,16 @@ export function log(message: string, ...args: unknown[]): void {
   getOutputChannel().appendLine(formatted);
 }
 
+/** Quchi 登录 / Webview 授权调试（写入 ACP Client Output） */
+export function logAuth(message: string, data?: unknown): void {
+  const suffix = data === undefined ? '' : ` ${JSON.stringify(data)}`;
+  log(`[QuchiAuth] ${message}${suffix}`);
+}
+
+export function showAuthLog(): void {
+  getOutputChannel().show(true);
+}
+
 export function logError(message: string, error?: unknown): void {
   const timestamp = new Date().toISOString();
   const errMsg = error instanceof Error ? error.message : String(error ?? '');

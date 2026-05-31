@@ -11,7 +11,7 @@ import { SessionTreeProvider } from './ui/SessionTreeProvider';
 import { StatusBarManager } from './ui/StatusBarManager';
 import { ChatWebviewProvider } from './ui/ChatWebviewProvider';
 import { FASTOPC_AGENT_NAME } from './config/AgentConfig';
-import { log, logError, disposeChannels, getOutputChannel, getTrafficChannel } from './utils/Logger';
+import { log, logAuth, logError, disposeChannels, getOutputChannel, getTrafficChannel } from './utils/Logger';
 import { initTelemetry, sendEvent } from './utils/TelemetryManager';
 
 /** Focus the chat panel in the secondary sidebar. */
@@ -22,6 +22,7 @@ async function focusChatPanel(): Promise<void> {
 
 export function activate(context: vscode.ExtensionContext): void {
   log('ACP Client extension activating...');
+  logAuth('FastOPC extension loaded — auth logs use Output channel「ACP Client」');
 
   // --- Telemetry ---
   const telemetryReporter = initTelemetry();
@@ -69,6 +70,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
+    quchiAuthService,
     quchiAuthService.onDidChangeAuthState(() => chatWebviewProvider.notifyAuthChanged()),
   );
 

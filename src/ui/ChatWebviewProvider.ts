@@ -6,7 +6,7 @@ import { SessionManager } from '../core/SessionManager';
 import { ChatHistoryStore } from '../core/ChatHistoryStore';
 import { SessionUpdateHandler, SessionUpdateListener } from '../handlers/SessionUpdateHandler';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
-import { logError } from '../utils/Logger';
+import { logAuth, logError, showAuthLog } from '../utils/Logger';
 import { sendEvent } from '../utils/TelemetryManager';
 import { HOME_SKILLS, type HomeSkill } from '../skills/homeSkills';
 
@@ -78,7 +78,18 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
     // Handle messages from the webview
     webviewView.webview.onDidReceiveMessage(async (message) => {
-      switch (message.type) {
+      const msgType = message?.type as string | undefined;
+      if (msgType && (msgType.startsWith('quchi') || msgType === 'webviewLog' || msgType === 'ready')) {
+        logAuth(`webview → extension: ${msgType}`, msgType === 'quchiPollAuth' ? { deviceCode: !!message.deviceCode } : undefined);
+      }
+      if (!msgType) {
+        logAuth('webview → extension: (no type)', message);
+        return;
+      }
+      switch (msgType) {
+        case 'webviewLog':
+          logAuth(`[Webview] ${message.message ?? ''}`);
+          break;
         case 'sendPrompt':
           this._hasChatContent = true;
           await this.handleSendPrompt(message.text, message.attachments ?? []);
@@ -127,10 +138,27 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           }
           break;
         case 'quchiSignIn':
-          await this.handleQuchiSignIn(message.agentName);
+          showAuthLog();
+          try {
+            await this.handleQuchiSignIn(message.agentName);
+          } catch (e: any) {
+            logError('Unhandled Quchi sign-in error', e);
+            this.postMessage({
+              type: 'authError',
+              message: e?.message || 'Quchi 登录失败。',
+            });
+          }
           break;
         case 'quchiPollAuth':
-          await this.handleQuchiPollAuth(message.agentName, message.deviceCode);
+          try {
+            await this.handleQuchiPollAuth(message.agentName, message.deviceCode);
+          } catch (e: any) {
+            logError('Unhandled Quchi poll error', e);
+            this.postMessage({
+              type: 'authError',
+              message: e?.message || 'Quchi 授权轮询失败。',
+            });
+          }
           break;
         case 'quchiOpenVerificationUri':
           if (message.uri) await vscode.env.openExternal(vscode.Uri.parse(message.uri));
@@ -166,6 +194,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           this.postMessage({ type: 'markdownRendered', items: rendered });
           break;
         }
+        default:
+          if (msgType.startsWith('quchi') || msgType === 'webviewLog') {
+            logAuth(`unhandled webview message type: ${msgType}`);
+          }
+          break;
       }
     });
 
@@ -178,6 +211,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       editorSub.dispose();
     });
     updateSelection();
+
+    // Push auth/UI state even if webview "ready" is delayed or lost (retained context).
+    void this.refreshExistingAuth().then(() => {
+      this.sendCurrentState();
+      this.notifyAuthChanged();
+    });
   }
 
   /** Push active editor selection info to the webview footer. */
@@ -404,13 +443,24 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleQuchiSignIn(agentName?: string): Promise<void> {
+    logAuth('handleQuchiSignIn start', { agentName, hasView: !!this.view });
     try {
       const state = await this.withAuthTimeout(
         this.quchiAuthService.signIn(agentName),
-        '连接 fastopc 超时，请确认已安装 fastopc 且 Node.js >= 22.5。',
+        '获取 Quchi 授权码超时，请检查网络后重试。',
       );
+      logAuth('handleQuchiSignIn got state', {
+        userCode: state.userCode,
+        verificationUri: state.verificationUri,
+        pending: state.pending,
+      });
       this.sendAuthState();
       this.postMessage({ type: 'quchiAuthState', state });
+      logAuth('handleQuchiSignIn posted quchiAuthState to webview');
+      if (state.verificationUri) {
+        await vscode.env.openExternal(vscode.Uri.parse(state.verificationUri));
+        logAuth('handleQuchiSignIn opened browser', { uri: state.verificationUri });
+      }
       await this.maybeAutoConnectFastOpc();
     } catch (e: any) {
       logError('Quchi sign-in failed', e);
@@ -504,7 +554,14 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
    * Post a message to the webview if it exists.
    */
   private postMessage(message: any): void {
-    this.view?.webview.postMessage(message);
+    if (!this.view) {
+      logAuth('postMessage skipped: view not ready', { type: message?.type });
+      return;
+    }
+    if (message?.type === 'quchiAuthState' || message?.type === 'authError' || message?.type === 'authState') {
+      logAuth(`extension → webview: ${message.type}`);
+    }
+    void this.view.webview.postMessage(message);
   }
 
   private withAuthTimeout<T>(promise: Promise<T>, message: string, ms = 45000): Promise<T> {
@@ -2188,6 +2245,13 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       return HOME_SKILLS.find(s => s.id === id);
     }
     const vscode = acquireVsCodeApi();
+    function dbg(msg) {
+      try { vscode.postMessage({ type: 'webviewLog', message: msg }); } catch (e) {
+        console.error('[FastOPC Webview]', msg, e);
+      }
+    }
+    dbg('script start');
+
     const messagesEl = document.getElementById('messages');
     const emptyState = document.getElementById('emptyState');
     const promptInput = document.getElementById('promptInput');
@@ -2238,6 +2302,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     let authLoggedIn = false;
     let quchiAuth = null;
     let loginBusy = false;
+    let loginBusyTimer = null;
     let quchiPollTimer = null;
 
     // Picker elements
@@ -2303,7 +2368,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       loginBusy = busy;
       if (loginSubmitBtn) {
         loginSubmitBtn.disabled = busy;
-        loginSubmitBtn.textContent = busy ? '正在连接 fastopc…' : '登录 Quchi';
+        loginSubmitBtn.textContent = busy ? '正在获取授权码…' : '登录 Quchi';
       }
     }
 
@@ -2323,6 +2388,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       if (!auth) return;
       authLoggedIn = auth.loggedIn === true;
       quchiAuth = auth.quchi || quchiAuth;
+      setLoginBusy(false);
 
       if (loginGate) {
         loginGate.classList.toggle('visible', !authLoggedIn);
@@ -2357,20 +2423,64 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     }
 
     function startQuchiLogin() {
-      if (loginBusy || authLoggedIn) return;
+      dbg('startQuchiLogin click authLoggedIn=' + authLoggedIn + ' loginBusy=' + loginBusy);
+      if (authLoggedIn) {
+        dbg('startQuchiLogin skipped: already logged in');
+        return;
+      }
       showLoginError('');
       setLoginBusy(true);
-      vscode.postMessage({ type: 'quchiSignIn' });
+      if (loginBusyTimer) clearTimeout(loginBusyTimer);
+      loginBusyTimer = setTimeout(() => {
+        if (loginBusy && !authLoggedIn) {
+          setLoginBusy(false);
+          showLoginError('获取授权码超时，请重试或查看 Output「ACP Client」。');
+          dbg('startQuchiLogin client timeout');
+        }
+      }, 50000);
+      try {
+        vscode.postMessage({ type: 'quchiSignIn' });
+        dbg('startQuchiLogin postMessage quchiSignIn sent');
+      } catch (err) {
+        setLoginBusy(false);
+        dbg('startQuchiLogin postMessage failed: ' + String(err));
+        showLoginError('无法连接扩展，请重载窗口后重试。');
+      }
     }
 
-    if (loginSubmitBtn) loginSubmitBtn.addEventListener('click', () => startQuchiLogin());
-    if (quchiOpenBtn) quchiOpenBtn.addEventListener('click', () => {
-      if (quchiAuth && quchiAuth.verificationUri) vscode.postMessage({ type: 'quchiOpenVerificationUri', uri: quchiAuth.verificationUri });
-    });
-    if (quchiCopyBtn) quchiCopyBtn.addEventListener('click', () => {
-      if (quchiAuth && quchiAuth.userCode) vscode.postMessage({ type: 'quchiCopyUserCode', userCode: quchiAuth.userCode });
-    });
+    function openQuchiVerification() {
+      if (quchiAuth && quchiAuth.verificationUri) {
+        vscode.postMessage({ type: 'quchiOpenVerificationUri', uri: quchiAuth.verificationUri });
+      } else {
+        startQuchiLogin();
+      }
+    }
 
+    dbg('loginSubmitBtn=' + !!loginSubmitBtn + ' quchiOpenBtn=' + !!quchiOpenBtn);
+    if (loginSubmitBtn) {
+      loginSubmitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startQuchiLogin();
+      });
+    } else {
+      dbg('ERROR: #loginSubmitBtn not found in DOM');
+    }
+    if (quchiOpenBtn) {
+      quchiOpenBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openQuchiVerification();
+      });
+    }
+    if (quchiCopyBtn) {
+      quchiCopyBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (quchiAuth && quchiAuth.userCode) {
+          vscode.postMessage({ type: 'quchiCopyUserCode', userCode: quchiAuth.userCode });
+        }
+      });
+    }
     if (avatarBtn) {
       avatarBtn.addEventListener('click', () => {
         if (authLoggedIn) {
@@ -2850,7 +2960,9 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     let toolCalls = {};
 
     // Auto-resize textarea within input card
-    promptInput.addEventListener('input', () => {
+    if (!promptInput) {
+      dbg('ERROR: #promptInput not found — composer disabled');
+    } else promptInput.addEventListener('input', () => {
       promptInput.style.height = 'auto';
       promptInput.style.height = Math.min(promptInput.scrollHeight, 160) + 'px';
 
@@ -2884,7 +2996,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     });
 
     // Send on Enter (Shift+Enter for newline)
-    promptInput.addEventListener('keydown', (e) => {
+    if (promptInput) promptInput.addEventListener('keydown', (e) => {
       // Slash popup navigation
       if (slashPopup.classList.contains('open')) {
         if (e.key === 'ArrowDown') {
@@ -4147,16 +4259,20 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           break;
 
         case 'quchiAuthState':
+          dbg('recv quchiAuthState userCode=' + (msg.state && msg.state.userCode));
           quchiAuth = msg.state;
           renderQuchiDeviceState(quchiAuth);
           scheduleQuchiPoll();
           setLoginBusy(false);
+          if (loginBusyTimer) { clearTimeout(loginBusyTimer); loginBusyTimer = null; }
           if (quchiAuth && quchiAuth.loggedIn) applyAuthState({ loggedIn: true, quchi: quchiAuth });
           break;
 
         case 'authError':
+          dbg('recv authError: ' + (msg.message || ''));
           showLoginError(msg.message || 'Quchi 登录失败。');
           setLoginBusy(false);
+          if (loginBusyTimer) { clearTimeout(loginBusyTimer); loginBusyTimer = null; }
           break;
 
         case 'state':
@@ -4501,8 +4617,14 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     // Restore previous state before telling extension we're ready
     restoreState();
 
+    window.addEventListener('error', (ev) => {
+      dbg('window.error: ' + (ev.message || ev.error));
+    });
+
     // Tell extension we're ready
+    dbg('posting ready');
     vscode.postMessage({ type: 'ready' });
+    dbg('script init done');
   </script>
 </body>
 </html>`;
