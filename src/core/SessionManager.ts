@@ -157,6 +157,16 @@ export class SessionManager extends EventEmitter {
     return { ...this.quchiAuthState };
   }
 
+  async refreshQuchiAuth(agentName: string): Promise<QuchiAuthState> {
+    const connInfo = await this.ensureAuthConnection(agentName);
+    const method = this.getQuchiAuthMethod(connInfo);
+    this.quchiAuthState = method
+      ? { loggedIn: false, pending: false }
+      : { loggedIn: true, pending: false };
+    this.emit('quchi-auth-changed', this.getQuchiAuthState());
+    return this.getQuchiAuthState();
+  }
+
   async startQuchiAuth(agentName: string): Promise<QuchiAuthState> {
     const connInfo = await this.ensureAuthConnection(agentName);
     const method = this.getQuchiAuthMethod(connInfo);
@@ -167,16 +177,17 @@ export class SessionManager extends EventEmitter {
     }
 
     const response = await connInfo.connection.authenticate({ methodId: method.id });
-    const meta = ((response as any)._meta ?? {}) as QuchiAuthState;
+    const meta = ((response as any)._meta ?? {}) as QuchiAuthState & { selectedMode?: string; status?: string };
+    const selectedModelId = meta.selectedModelId ?? meta.selectedMode;
     this.quchiAuthState = {
-      loggedIn: meta.selectedModelId !== undefined || meta.loggedIn === true || (meta as any).status === 'success',
-      pending: (meta as any).status !== 'success',
+      loggedIn: selectedModelId !== undefined || meta.loggedIn === true || meta.status === 'success',
+      pending: meta.status !== 'success',
       deviceCode: meta.deviceCode,
       userCode: meta.userCode,
       verificationUri: meta.verificationUri,
       interval: meta.interval,
       expiresIn: meta.expiresIn,
-      selectedModelId: meta.selectedModelId,
+      selectedModelId,
     };
     this.emit('quchi-auth-changed', this.getQuchiAuthState());
     return this.getQuchiAuthState();
@@ -192,7 +203,7 @@ export class SessionManager extends EventEmitter {
     }
 
     const response = await connInfo.connection.authenticate({ methodId: method.id, _meta: { deviceCode } } as any);
-    const meta = ((response as any)._meta ?? {}) as QuchiAuthState & { status?: string };
+    const meta = ((response as any)._meta ?? {}) as QuchiAuthState & { selectedMode?: string; status?: string };
     this.quchiAuthState = {
       loggedIn: meta.status === 'success',
       pending: meta.status === 'pending',
@@ -201,7 +212,7 @@ export class SessionManager extends EventEmitter {
       verificationUri: this.quchiAuthState.verificationUri,
       interval: this.quchiAuthState.interval,
       expiresIn: this.quchiAuthState.expiresIn,
-      selectedModelId: meta.selectedModelId,
+      selectedModelId: meta.selectedModelId ?? meta.selectedMode,
       error: meta.status === 'expired' ? 'Quchi 授权已过期，请重新登录。' : undefined,
     };
     this.emit('quchi-auth-changed', this.getQuchiAuthState());
@@ -672,15 +683,30 @@ export class SessionManager extends EventEmitter {
     const connInfo = this.connectionManager.getConnection(session.agentId);
     if (!connInfo) { return null; }
 
-    const response = await connInfo.connection.setSessionConfigOption({
-      sessionId,
-      configId,
-      value,
-    });
+    try {
+      const response = await connInfo.connection.setSessionConfigOption({
+        sessionId,
+        configId,
+        value,
+      });
 
-    const options = (response as any)?.configOptions ?? null;
-    this.applyConfigOptions(sessionId, options);
-    return options;
+      const options = (response as any)?.configOptions ?? null;
+      this.applyConfigOptions(sessionId, options);
+      return options;
+    } catch (e: any) {
+      const message = e?.message || String(e);
+      if (configId !== 'quchi-mode' || !message.includes('Method not found')) throw e;
+
+      await connInfo.connection.setSessionMode({ sessionId, modeId: value });
+      const options = session.configOptions?.map(option => {
+        if (option.id !== configId) return option;
+        return { ...(option as any), currentValue: value } as SessionConfigOption;
+      }) ?? null;
+      this.applyConfigOptions(sessionId, options);
+      if (session.modes) session.modes.currentModeId = value;
+      this.emit('mode-changed', sessionId, value);
+      return options;
+    }
   }
 
   /**

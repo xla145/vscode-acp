@@ -10,8 +10,7 @@ import { SessionUpdateHandler } from './handlers/SessionUpdateHandler';
 import { SessionTreeProvider } from './ui/SessionTreeProvider';
 import { StatusBarManager } from './ui/StatusBarManager';
 import { ChatWebviewProvider } from './ui/ChatWebviewProvider';
-import { getAgentNames } from './config/AgentConfig';
-import { fetchRegistry } from './config/RegistryClient';
+import { FASTOPC_AGENT_NAME } from './config/AgentConfig';
 import { log, logError, disposeChannels, getOutputChannel, getTrafficChannel } from './utils/Logger';
 import { initTelemetry, sendEvent } from './utils/TelemetryManager';
 
@@ -100,6 +99,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  sessionManager.on('config-options-changed', (sessionId: string, configOptions: any) => {
+    if (sessionId === sessionManager.getActiveSessionId()) {
+      chatWebviewProvider.notifyConfigOptionsUpdate(configOptions);
+    }
+  });
+
   // Session-load replay state — drive the webview overlay.
   sessionManager.on('session-load-start', () => {
     chatWebviewProvider.notifyLoadSessionStart();
@@ -123,32 +128,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // --- Commands ---
 
-  // Connect to Agent (primary action — inline icon in tree or pick from list)
-  const connectAgentCmd = vscode.commands.registerCommand('acp.connectAgent', async (agentNameOrItem?: string | any) => {
-    // Handle tree item object or string
-    let agentName: string | undefined;
-    if (typeof agentNameOrItem === 'string') {
-      agentName = agentNameOrItem;
-    } else if (agentNameOrItem?.agentName) {
-      agentName = agentNameOrItem.agentName;
-    }
+  const connectAgentCmd = vscode.commands.registerCommand('acp.connectAgent', async () => {
+    const agentName = FASTOPC_AGENT_NAME;
 
-    if (!agentName) {
-      const agentNames = getAgentNames();
-      if (agentNames.length === 0) {
-        vscode.window.showWarningMessage(
-          'No ACP agents configured. Add agents in Settings > ACP > Agents.',
-        );
-        return;
-      }
-      agentName = await vscode.window.showQuickPick(agentNames, {
-        placeHolder: 'Select an agent to connect',
-        title: 'Connect to Agent',
-      });
-      if (!agentName) { return; }
-    }
-
-    // If switching agents, clear chat and reconnect directly without prompting
     const currentAgent = sessionManager.getActiveAgentName();
     if (currentAgent && currentAgent !== agentName) {
       chatWebviewProvider.clearChat();
@@ -161,9 +143,9 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage('请先完成 Quchi 登录授权。');
         return;
       }
-      await sessionManager.connectToAgent(agentName!);
+      await sessionManager.connectToAgent(agentName);
     } catch (e: any) {
-      logError('Failed to connect to agent', e);
+      logError('Failed to connect to FastOPC Agent', e);
       vscode.window.showErrorMessage(`Failed to connect: ${e.message}`);
     }
   });
@@ -379,71 +361,6 @@ export function activate(context: vscode.ExtensionContext): void {
     historyStore.forget(agentName, sessionId);
   });
 
-  // Add Agent Configuration
-  const addAgentCmd = vscode.commands.registerCommand('acp.addAgent', async () => {
-    const name = await vscode.window.showInputBox({
-      prompt: 'Agent name',
-      placeHolder: 'my-agent',
-      title: 'Add ACP Agent',
-    });
-    if (!name) { return; }
-
-    const command = await vscode.window.showInputBox({
-      prompt: 'Command to launch the agent',
-      placeHolder: 'npx',
-      title: 'Agent Command',
-    });
-    if (!command) { return; }
-
-    const argsStr = await vscode.window.showInputBox({
-      prompt: 'Arguments (space-separated)',
-      placeHolder: '-y @my-org/agent',
-      title: 'Agent Arguments',
-    });
-    const args = argsStr ? argsStr.split(/\s+/) : [];
-
-    const config = vscode.workspace.getConfiguration('acp');
-    const agents: Record<string, any> = { ...(config.get<Record<string, any>>('agents') || {}) };
-    agents[name] = { command, args };
-    await config.update('agents', agents, vscode.ConfigurationTarget.Global);
-    sessionTreeProvider.refresh();
-    vscode.window.showInformationMessage(`Agent "${name}" added.`);
-    sendEvent('agent/added');
-  });
-
-  // Remove Agent
-  const removeAgentCmd = vscode.commands.registerCommand('acp.removeAgent', async (item?: any) => {
-    const config = vscode.workspace.getConfiguration('acp');
-    const agents: Record<string, any> = { ...(config.get<Record<string, any>>('agents') || {}) };
-    const agentNames = Object.keys(agents);
-    if (agentNames.length === 0) {
-      vscode.window.showInformationMessage('No agents configured.');
-      return;
-    }
-
-    const name = item?.agentName ?? await vscode.window.showQuickPick(agentNames, {
-      placeHolder: 'Select agent to remove',
-      title: 'Remove ACP Agent',
-    });
-    if (!name) { return; }
-
-    const confirm = await vscode.window.showWarningMessage(
-      `Remove agent "${name}"?`, { modal: true }, 'Remove',
-    );
-    if (confirm !== 'Remove') { return; }
-
-    // Disconnect if connected
-    if (sessionManager.isAgentConnected(name)) {
-      await sessionManager.disconnectAgent(name);
-    }
-
-    delete agents[name];
-    await config.update('agents', agents, vscode.ConfigurationTarget.Global);
-    sessionTreeProvider.refresh();
-    vscode.window.showInformationMessage(`Agent "${name}" removed.`);
-    sendEvent('agent/removed', { agentName: name });
-  });
-
   // Attach File
   const attachFileCmd = vscode.commands.registerCommand('acp.attachFile', async () => {
     const uris = await vscode.window.showOpenDialog({
@@ -453,29 +370,6 @@ export function activate(context: vscode.ExtensionContext): void {
     });
     if (uris && uris.length > 0) {
       chatWebviewProvider.attachFile(uris[0]);
-    }
-  });
-
-  // Browse Registry
-  const browseRegistryCmd = vscode.commands.registerCommand('acp.browseRegistry', async () => {
-    sendEvent('registry/browse');
-    try {
-      const agents = await fetchRegistry();
-      const items = agents.map(a => ({
-        label: a.name,
-        description: a.command,
-        detail: a.description || '',
-      }));
-      if (items.length === 0) {
-        vscode.window.showInformationMessage('No agents found in registry.');
-        return;
-      }
-      await vscode.window.showQuickPick(items, {
-        placeHolder: 'ACP Agent Registry',
-        title: 'Available ACP Agents',
-      });
-    } catch (e: any) {
-      vscode.window.showErrorMessage(`Failed to fetch registry: ${e.message}`);
     }
   });
 
@@ -507,10 +401,7 @@ export function activate(context: vscode.ExtensionContext): void {
     loadMoreSessionsCmd,
     copySessionIdCmd,
     forgetSessionCmd,
-    addAgentCmd,
-    removeAgentCmd,
     attachFileCmd,
-    browseRegistryCmd,
     signOutCmd,
     {
       dispose: () => {

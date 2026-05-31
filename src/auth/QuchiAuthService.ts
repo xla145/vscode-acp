@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { SessionManager, type QuchiAuthState } from '../core/SessionManager';
-import { getAgentNames } from '../config/AgentConfig';
+import { FASTOPC_AGENT_NAME } from '../config/AgentConfig';
 
 export class QuchiAuthService {
   private state: QuchiAuthState = { loggedIn: false, pending: false };
@@ -20,6 +20,13 @@ export class QuchiAuthService {
 
   getState(): QuchiAuthState {
     return { ...this.state };
+  }
+
+  async refresh(agentName?: string): Promise<QuchiAuthState> {
+    const targetAgent = agentName ?? this.getDefaultAgentName();
+    this.state = await this.sessionManager.refreshQuchiAuth(targetAgent);
+    this.onDidChangeAuthStateEmitter.fire(this.getState());
+    return this.getState();
   }
 
   async signIn(agentName?: string): Promise<QuchiAuthState> {
@@ -43,10 +50,6 @@ export class QuchiAuthService {
   }
 
   private getDefaultAgentName(): string {
-    const configured = vscode.workspace.getConfiguration('acp').get<string>('autoConnectAgent', '').trim();
-    if (configured) return configured;
-    const [first] = getAgentNames();
-    if (!first) throw new Error('No ACP agents configured.');
-    return first;
+    return FASTOPC_AGENT_NAME;
   }
 }

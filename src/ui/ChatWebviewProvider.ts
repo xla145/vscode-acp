@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { marked } from 'marked';
-import { getAgentConfigs, getAgentNames } from '../config/AgentConfig';
+import { FASTOPC_AGENT_NAME, getAgentConfigs, getAgentNames } from '../config/AgentConfig';
 import { QuchiAuthService } from '../auth/QuchiAuthService';
 import { SessionManager } from '../core/SessionManager';
 import { ChatHistoryStore } from '../core/ChatHistoryStore';
@@ -20,6 +20,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private updateListener: SessionUpdateListener;
   private _hasChatContent = false;
+  private authRefreshStarted = false;
+  private autoConnecting = false;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -151,7 +153,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           }
           break;
         case 'ready':
-          // Webview loaded — send current session state
+          await this.refreshExistingAuth();
           this.sendCurrentState();
           break;
         case 'renderMarkdown': {
@@ -365,8 +367,40 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       loggedIn: this.quchiAuthService.isAuthenticated(),
       authProvider: 'quchi',
       quchi: this.quchiAuthService.getState(),
-      autoConnectAgent: vscode.workspace.getConfiguration('acp').get<string>('autoConnectAgent', ''),
+      autoConnectAgent: FASTOPC_AGENT_NAME,
     });
+    void this.maybeAutoConnectFastOpc();
+  }
+
+  private async refreshExistingAuth(): Promise<void> {
+    if (this.authRefreshStarted || this.quchiAuthService.isAuthenticated()) return;
+    this.authRefreshStarted = true;
+    try {
+      await this.quchiAuthService.refresh(FASTOPC_AGENT_NAME);
+      this.sendAuthState();
+    } catch (e) {
+      logError('Quchi auth refresh failed', e);
+    }
+  }
+
+  private async maybeAutoConnectFastOpc(): Promise<void> {
+    if (!this.quchiAuthService.isAuthenticated()) return;
+    if (this.sessionManager.getActiveSessionId()) return;
+    if (this.autoConnecting) return;
+
+    this.autoConnecting = true;
+    try {
+      await this.sessionManager.connectToAgent(FASTOPC_AGENT_NAME);
+      this.notifyActiveSessionChanged();
+    } catch (e: any) {
+      logError('FastOPC auto-connect failed', e);
+      this.postMessage({
+        type: 'error',
+        message: e.message || 'FastOPC Agent 自动连接失败。',
+      });
+    } finally {
+      this.autoConnecting = false;
+    }
   }
 
   private async handleQuchiSignIn(agentName?: string): Promise<void> {
@@ -374,6 +408,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       const state = await this.quchiAuthService.signIn(agentName);
       this.sendAuthState();
       this.postMessage({ type: 'quchiAuthState', state });
+      await this.maybeAutoConnectFastOpc();
     } catch (e: any) {
       logError('Quchi sign-in failed', e);
       this.postMessage({
@@ -388,12 +423,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       const state = await this.quchiAuthService.poll(agentName, deviceCode);
       this.sendAuthState();
       this.postMessage({ type: 'quchiAuthState', state });
-
-      const autoAgent = vscode.workspace.getConfiguration('acp').get<string>('autoConnectAgent', '').trim();
-      if (state.loggedIn && autoAgent && !this.sessionManager.getActiveSessionId()) {
-        await this.sessionManager.connectToAgent(autoAgent);
-        this.notifyActiveSessionChanged();
-      }
+      await this.maybeAutoConnectFastOpc();
     } catch (e: any) {
       logError('Quchi auth polling failed', e);
       this.postMessage({
@@ -992,7 +1022,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
     /* Tool call row (flat, per mockup) */
     .tool-row {
-      display: flex; align-items: center; gap: 8px;
+      display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px; column-gap: 8px;
       padding: 5px 10px;
       background: var(--vscode-editorWidget-background);
       border: 1px solid var(--vscode-panel-border);
@@ -1000,7 +1030,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       font-size: 0.82em;
     }
     .tool-row .tr-icon { font-size: 13px; flex-shrink: 0; }
-    .tool-row .tr-name { flex: 1; color: var(--vscode-descriptionForeground, var(--vscode-foreground)); opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-row .tr-name { flex: 1; color: var(--vscode-descriptionForeground, var(--vscode-foreground)); opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .tool-row .tr-name em { color: var(--vscode-foreground); font-style: normal; font-weight: 500; }
     .tool-row .tr-status {
       font-size: 0.76em;
@@ -1013,6 +1043,30 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     .tool-row .tr-status.running { background: color-mix(in srgb, var(--accent-blue) 15%, transparent); color: var(--accent-blue); }
     .tool-row .tr-status.completed { background: color-mix(in srgb, var(--vscode-testing-iconPassed) 12%, transparent); color: var(--vscode-testing-iconPassed); }
     .tool-row .tr-status.failed { background: color-mix(in srgb, var(--vscode-testing-iconFailed) 12%, transparent); color: var(--vscode-testing-iconFailed); }
+
+    /* Tool locations chips */
+    .tr-locations { display: flex; flex-wrap: wrap; gap: 4px; width: 100%; }
+    .tr-loc { font-size: 0.75em; opacity: 0.65; background: color-mix(in srgb,var(--vscode-foreground) 8%,transparent); border-radius: 3px; padding: 1px 5px; font-family: var(--vscode-editor-font-family,monospace); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
+
+    /* Tool content body (expandable) */
+    .tr-body { width: 100%; }
+    .tr-body-toggle { font-size: 0.72em; cursor: pointer; opacity: 0.5; user-select: none; display: inline-block; }
+    .tr-body-toggle:hover { opacity: 0.85; }
+    .tr-body-content { display: none; margin-top: 4px; }
+    .tr-body-content.open { display: block; }
+
+    /* Diff rendering */
+    .tr-diff { border: 1px solid var(--vscode-panel-border); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+    .tr-diff-path { font-family: var(--vscode-editor-font-family,monospace); font-size: 0.8em; padding: 2px 8px; background: color-mix(in srgb,var(--vscode-foreground) 8%,transparent); opacity: 0.75; }
+    .tr-diff-lines { max-height: 180px; overflow-y: auto; font-family: var(--vscode-editor-font-family,monospace); font-size: 0.8em; line-height: 1.45; }
+    .tr-diff-line { display: flex; min-width: 0; }
+    .tr-diff-line span { padding: 0 8px; white-space: pre; word-break: break-all; min-width: 0; }
+    .tr-diff-line.add { background: color-mix(in srgb,var(--vscode-testing-iconPassed) 12%,transparent); color: var(--vscode-testing-iconPassed); }
+    .tr-diff-line.del { background: color-mix(in srgb,var(--vscode-testing-iconFailed) 12%,transparent); color: var(--vscode-testing-iconFailed); }
+    .tr-diff-line.ctx { opacity: 0.5; }
+
+    /* Text / terminal output */
+    .tr-text-out { font-size: 0.8em; font-family: var(--vscode-editor-font-family,monospace); max-height: 120px; overflow-y: auto; padding: 4px 6px; background: color-mix(in srgb,var(--vscode-foreground) 5%,transparent); border-radius: 3px; white-space: pre-wrap; word-break: break-word; margin-bottom: 4px; }
 
     /* Legacy inline tool (history restore) */
     .tool-call-inline {
@@ -1241,6 +1295,54 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     .empty-connect-btn { display: none; }
     .chat-brand, .empty-mascot { display: none; }
     .empty-state .actions { display: none; }
+
+    /* ── Session home (skill shortcuts after connecting) ── */
+    .session-home {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 20px 8px 16px;
+      gap: 10px;
+    }
+    .session-home-title {
+      font-size: 0.72em;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--composer-muted);
+      padding: 0 4px;
+    }
+    .session-home-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .skill-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 20px;
+      background: var(--vscode-editorWidget-background);
+      color: var(--vscode-foreground);
+      font-family: var(--vscode-font-family);
+      font-size: 0.83em;
+      font-weight: 500;
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+      text-align: left;
+    }
+    .skill-chip:hover {
+      border-color: color-mix(in srgb, var(--accent) 70%, var(--vscode-panel-border));
+      background: color-mix(in srgb, var(--accent) 8%, var(--vscode-editorWidget-background));
+    }
+    .skill-chip .sc-slash {
+      font-size: 0.78em;
+      font-family: var(--vscode-editor-font-family, monospace);
+      opacity: 0.45;
+      white-space: nowrap;
+    }
 
     /* ── Composer (design: single lavender-bordered card) ── */
     .input-area {
@@ -1921,7 +2023,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       </button>
       <span class="badge-dot"></span>
     </div>
-    <button class="icon-btn new-agent-btn" id="newChatBtn" title="New conversation / connect agent">＋</button>
+    <button class="icon-btn new-agent-btn" id="newChatBtn" title="New FastOPC conversation">＋</button>
     <button class="avatar-btn" id="avatarBtn" title="Account">AU</button>
   </header>
 
@@ -1943,7 +2045,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         <div class="home-brand">
           <div class="home-logo">🤖</div>
           <div class="home-title">AI 助手</div>
-          <div class="home-subtitle">选择一个技能开始，或连接 Agent 后直接对话。</div>
+          <div class="home-subtitle">登录 Quchi 后将自动连接 FastOPC Agent。</div>
         </div>
         <nav class="home-menu" id="homeMenu" aria-label="Quick actions">
           <button class="home-menu-item active" type="button" data-action="chat">
@@ -1982,6 +2084,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       </div>
       <button class="empty-connect-btn" id="emptyConnectBtn" type="button">Connect</button>
     </div>
+    <!-- Session home: skill shortcuts shown after connecting with empty chat -->
+    <div class="session-home" id="sessionHome" style="display:none"></div>
   </div>
 
   <!-- ── Input area ── -->
@@ -2088,6 +2192,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     const agentCards = document.getElementById('agentCards');
     const homeMenu = document.getElementById('homeMenu');
     const homeAgentsSection = document.getElementById('homeAgentsSection');
+    const sessionHome = document.getElementById('sessionHome');
     const historyPanel = document.getElementById('historyPanel');
     const historyBackdrop = document.getElementById('historyBackdrop');
     const historyCloseBtn = document.getElementById('historyCloseBtn');
@@ -2359,40 +2464,26 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     function renderAgentCards(agents) {
       if (!agentCards) return;
       configuredAgents = agents || [];
-      if (configuredAgents.length === 0) {
-        agentCards.innerHTML = '<div class="agent-card add-card" data-action="add">' +
-          '<span class="ac-icon">＋</span>' +
-          '<div class="ac-info"><div class="ac-name">Connect a new agent…</div></div></div>';
-        return;
-      }
-      let html = configuredAgents.map(a => {
+      agentCards.innerHTML = configuredAgents.map(a => {
         const cls = 'agent-card' + (a.connected ? ' connected' : '');
         const status = a.connected
           ? '<span class="ac-status on">● connected</span>'
-          : '<span class="ac-status off">○ offline</span>';
+          : '<span class="ac-status off">○ auto-connect</span>';
         return '<div class="' + cls + '" data-agent="' + escapeAttr(a.name) + '">' +
           '<span class="ac-icon">' + agentIcon(a.name) + '</span>' +
           '<div class="ac-info">' +
           '<div class="ac-name">' + escapeHtml(a.displayName || a.name) + '</div>' +
-          '<div class="ac-desc">' + escapeHtml(a.name) + (a.connected ? ' — connected' : '') + '</div>' +
+          '<div class="ac-desc">' + (a.connected ? '已连接' : '授权后自动连接') + '</div>' +
           '</div>' + status + '</div>';
       }).join('');
-      html += '<div class="agent-card add-card" data-action="add">' +
-        '<span class="ac-icon">＋</span>' +
-        '<div class="ac-info"><div class="ac-name">Connect a new agent…</div></div></div>';
-      agentCards.innerHTML = html;
     }
 
     if (agentCards) {
       agentCards.addEventListener('click', (e) => {
         const target = e.target;
         if (!(target instanceof Element)) return;
-        const add = target.closest('[data-action="add"]');
-        if (add) { execCmd('acp.addAgent'); return; }
         const card = target.closest('[data-agent]');
-        if (card) {
-          vscode.postMessage({ type: 'connectAgent', agentName: card.dataset.agent });
-        }
+        if (card) vscode.postMessage({ type: 'connectAgent' });
       });
     }
 
@@ -2681,7 +2772,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             addThoughtDOM(item.text, item.durationSec || 0);
             break;
           case 'toolCall':
-            addToolCallDOM(item.toolCallId, item.title, item.status);
+            addToolCallDOM(item.toolCallId, item.title, item.status, item.toolKind, item.content, item.locations);
             break;
           case 'plan':
             addPlanDOM(item.plan);
@@ -2991,7 +3082,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             addThoughtDOM(item.text, item.durationSec || 0);
             break;
           case 'toolCall':
-            addToolCallDOM(item.toolCallId, item.title, item.status);
+            addToolCallDOM(item.toolCallId, item.title, item.status, item.toolKind, item.content, item.locations);
             break;
           case 'plan':
             addPlanDOM(item.plan);
@@ -3619,13 +3710,21 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    function addToolCall(toolCallId, title, status) {
-      chatHistory.push({ kind: 'toolCall', toolCallId, title, status });
+    function addToolCall(toolCallId, title, status, kind, content, locations) {
+      chatHistory.push({ kind: 'toolCall', toolCallId, title, status, toolKind: kind, content, locations });
       saveState();
-      addToolCallInline(toolCallId, title, status);
+      addToolCallInline(toolCallId, title, status, kind, content, locations);
     }
 
-    function getToolIcon(title) {
+    function getToolIcon(kind, title) {
+      if (kind) {
+        const kindIcons = {
+          read: '📂', edit: '✏️', delete: '🗑️', move: '📦',
+          search: '🔍', execute: '▶️', think: '💭', fetch: '🌐',
+          switch_mode: '⚙️',
+        };
+        if (kindIcons[kind]) return kindIcons[kind];
+      }
       const t = (title || '').toLowerCase();
       if (t.includes('read')) return '📂';
       if (t.includes('grep') || t.includes('search')) return '🔍';
@@ -3643,40 +3742,135 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       return '<em>' + escapeHtml(raw) + '</em>';
     }
 
-    function addToolCallInline(toolCallId, title, status) {
+    // LCS-based line diff (capped at MAX lines to bound O(N*M) cost)
+    function computeLineDiff(oldLines, newLines) {
+      const MAX = 200;
+      const a = oldLines.slice(0, MAX), b = newLines.slice(0, MAX);
+      const m = a.length, n = b.length;
+      const dp = [];
+      for (let i = 0; i <= m; i++) { dp[i] = new Array(n + 1).fill(0); }
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] + 1 : Math.max(dp[i-1][j], dp[i][j-1]);
+        }
+      }
+      const result = [];
+      let i = m, j = n;
+      while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && a[i-1] === b[j-1]) {
+          result.unshift({ type: 'ctx', text: a[i-1] });
+          i--; j--;
+        } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+          result.unshift({ type: 'add', text: b[j-1] });
+          j--;
+        } else {
+          result.unshift({ type: 'del', text: a[i-1] });
+          i--;
+        }
+      }
+      return result;
+    }
+
+    function buildDiffHtml(diffContent) {
+      const path = diffContent.path || '';
+      const oldLines = (diffContent.oldText || '').split('\n');
+      const newLines = (diffContent.newText || '').split('\n');
+      const lines = diffContent.oldText != null
+        ? computeLineDiff(oldLines, newLines)
+        : newLines.map(t => ({ type: 'add', text: t }));
+      const lineHtml = lines.slice(0, 400).map(l => {
+        const cls = l.type === 'add' ? 'add' : l.type === 'del' ? 'del' : 'ctx';
+        const prefix = l.type === 'add' ? '+' : l.type === 'del' ? '-' : ' ';
+        return '<div class="tr-diff-line ' + cls + '"><span>' + prefix + ' ' + escapeHtml(l.text) + '</span></div>';
+      }).join('');
+      return '<div class="tr-diff">'
+           + '<div class="tr-diff-path">' + escapeHtml(path) + '</div>'
+           + '<div class="tr-diff-lines">' + lineHtml + '</div>'
+           + '</div>';
+    }
+
+    function buildContentHtml(contentArr) {
+      if (!contentArr || !contentArr.length) return '';
+      let html = '';
+      for (const c of contentArr) {
+        if (c.type === 'diff') {
+          html += buildDiffHtml(c);
+        } else if (c.type === 'content') {
+          const block = c.content;
+          if (block && block.type === 'text' && block.text) {
+            html += '<div class="tr-text-out">' + escapeHtml(block.text) + '</div>';
+          }
+        } else if (c.type === 'terminal') {
+          html += '<div class="tr-text-out" style="opacity:0.6">Terminal: ' + escapeHtml(c.terminalId || '') + '</div>';
+        }
+      }
+      return html;
+    }
+
+    function buildToolRowHtml(toolCallId, title, status, kind, content, locations) {
+      let locHtml = '';
+      if (locations && locations.length) {
+        const chips = locations.slice(0, 6).map(loc => {
+          const label = loc.line != null ? loc.path + ':' + loc.line : loc.path;
+          return '<span class="tr-loc" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</span>';
+        }).join('');
+        locHtml = '<div class="tr-locations">' + chips + '</div>';
+      }
+      const inner = buildContentHtml(content);
+      const bodyHtml = inner
+        ? '<div class="tr-body"><span class="tr-body-toggle">▸ Output</span><div class="tr-body-content">' + inner + '</div></div>'
+        : '';
+      return '<span class="tr-icon">' + getToolIcon(kind, title) + '</span>'
+           + '<span class="tr-name">' + parseToolTitle(title) + '</span>'
+           + '<span class="tr-status ' + status + '">' + getStatusLabel(status) + '</span>'
+           + locHtml + bodyHtml;
+    }
+
+    function attachBodyToggle(el) {
+      el.addEventListener('click', e => {
+        const btn = e.target.closest('.tr-body-toggle');
+        if (!btn) return;
+        const body = btn.nextElementSibling;
+        if (!body) return;
+        const open = body.classList.toggle('open');
+        btn.textContent = (open ? '▾' : '▸') + ' Output';
+      });
+    }
+
+    function addToolCallInline(toolCallId, title, status, kind, content, locations) {
       hideEmpty();
       if (!currentTurnEl) currentTurnEl = createTurnEl();
 
       const el = document.createElement('div');
       el.className = 'tool-row';
       el.id = 'tc-' + toolCallId;
-      el.innerHTML =
-        '<span class="tr-icon">' + getToolIcon(title) + '</span>' +
-        '<span class="tr-name">' + parseToolTitle(title) + '</span>' +
-        '<span class="tr-status ' + status + '">' + getStatusLabel(status) + '</span>';
+      el.innerHTML = buildToolRowHtml(toolCallId, title, status, kind, content, locations);
+      attachBodyToggle(el);
       currentTurnEl.appendChild(el);
       toolCalls[toolCallId] = el;
       scrollToBottom();
     }
 
-    // Fallback DOM builder for history restore (standalone card)
-    function addToolCallDOM(toolCallId, title, status) {
+    // DOM builder for history restore
+    function addToolCallDOM(toolCallId, title, status, kind, content, locations) {
       hideEmpty();
       const el = document.createElement('div');
-      el.className = 'tool-call';
+      el.className = 'tool-row';
       el.id = 'tc-' + toolCallId;
-      el.innerHTML = '<span class="title">' + escapeHtml(title || 'Tool Call') + '</span>'
-        + '<span class="status-badge ' + status + '">' + status + '</span>';
+      el.innerHTML = buildToolRowHtml(toolCallId, title, status, kind, content, locations);
+      attachBodyToggle(el);
       messagesEl.appendChild(el);
       toolCalls[toolCallId] = el;
       scrollToBottom();
     }
 
-    function updateToolCall(toolCallId, status, title) {
+    function updateToolCall(toolCallId, status, title, content, locations) {
       for (let i = chatHistory.length - 1; i >= 0; i--) {
         if (chatHistory[i].kind === 'toolCall' && chatHistory[i].toolCallId === toolCallId) {
           chatHistory[i].status = status;
           if (title) chatHistory[i].title = title;
+          if (content) chatHistory[i].content = content;
+          if (locations) chatHistory[i].locations = locations;
           break;
         }
       }
@@ -3685,25 +3879,50 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       const el = toolCalls[toolCallId] || document.getElementById('tc-' + toolCallId);
       if (!el) return;
 
-      // Inline style (turn-based) - update status pill
-      const statusEl = el.querySelector('.tr-status') || el.querySelector('.tc-status');
+      const statusEl = el.querySelector('.tr-status');
       if (statusEl) {
         statusEl.className = 'tr-status ' + status;
         statusEl.textContent = getStatusLabel(status);
-        const titleEl = el.querySelector('.tr-name') || el.querySelector('.tc-title');
-        if (title && titleEl) titleEl.innerHTML = parseToolTitle(title);
-        return;
+        if (title) {
+          const titleEl = el.querySelector('.tr-name');
+          if (titleEl) titleEl.innerHTML = parseToolTitle(title);
+        }
       }
+
+      if (locations && locations.length) {
+        let locEl = el.querySelector('.tr-locations');
+        if (!locEl) {
+          locEl = document.createElement('div');
+          locEl.className = 'tr-locations';
+          el.appendChild(locEl);
+        }
+        locEl.innerHTML = locations.slice(0, 6).map(loc => {
+          const label = loc.line != null ? loc.path + ':' + loc.line : loc.path;
+          return '<span class="tr-loc" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</span>';
+        }).join('');
+      }
+
+      if (content && content.length) {
+        const inner = buildContentHtml(content);
+        if (inner) {
+          let bodyEl = el.querySelector('.tr-body');
+          if (!bodyEl) {
+            bodyEl = document.createElement('div');
+            bodyEl.className = 'tr-body';
+            bodyEl.innerHTML = '<span class="tr-body-toggle">▸ Output</span><div class="tr-body-content">' + inner + '</div>';
+            attachBodyToggle(bodyEl);
+            el.appendChild(bodyEl);
+          } else {
+            const contentEl = bodyEl.querySelector('.tr-body-content');
+            if (contentEl) contentEl.innerHTML = inner;
+          }
+        }
+      }
+
       // Legacy card style fallback
       const badge = el.querySelector('.status-badge');
-      if (badge) {
-        badge.className = 'status-badge ' + status;
-        badge.textContent = status;
-      }
-      if (title) {
-        const titleEl = el.querySelector('.title');
-        if (titleEl) titleEl.textContent = title;
-      }
+      if (badge) { badge.className = 'status-badge ' + status; badge.textContent = status; }
+      if (title) { const t = el.querySelector('.title'); if (t) t.textContent = title; }
     }
 
     function addPlan(plan) {
@@ -4170,6 +4389,9 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             tc.toolCallId || 'unknown',
             tc.title || 'Tool Call',
             tc.status || 'pending',
+            tc.kind || null,
+            tc.content || null,
+            tc.locations || null,
           );
           break;
         }
@@ -4179,6 +4401,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             update.toolCallId || 'unknown',
             update.status || 'completed',
             update.title,
+            update.content || null,
+            update.locations || null,
           );
           break;
         }
