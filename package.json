@@ -2,7 +2,7 @@
   "name": "fastopc",
   "displayName": "Fast OPC",
   "description": "Fast OPC client for VS Code",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "formulahendry",
   "license": "MIT",
   "icon": "resources/icon.png",

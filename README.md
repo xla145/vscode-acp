@@ -1,93 +1,166 @@
-# fastopc-acp-vscode
+# ACP Client for VS Code
 
+A [Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=formulahendry.acp-client) that provides a client for the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) — connect to any ACP-compatible AI coding agent directly from your editor.
 
+![ACP Client Screenshot](resources/screenshot.png)
 
-## Getting started
+## Features
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- **Multi-Agent Support**: Connect to 11 pre-configured ACP agents or add your own
+- **Single-Agent Focus**: One agent active at a time — seamlessly switch between agents
+- **Per-Agent Session List**: Each agent in the Agents view is expandable into its previous sessions. Click a session to restore its history in the chat. Backed by `session/list` when the agent supports it, or by a local per-workspace cache otherwise.
+- **Session Config Options**: Dynamic per-session selectors (mode, model, reasoning level, …) advertised by the agent are rendered automatically in the composer toolbar.
+- **Interactive Chat**: Built-in chat panel with Markdown rendering, inline tool call display, and collapsible tool sections
+- **Thinking Display**: See agent reasoning in a collapsible block with streaming animation and elapsed time
+- **Slash Commands**: Autocomplete popup for agent-provided commands with keyboard navigation
+- **Mode & Model Picker**: Switch agent modes and models directly from the chat toolbar (kept for agents that haven't migrated to Session Config Options yet)
+- **File System Integration**: Agents can read and write files in your workspace
+- **Terminal Execution**: Agents can run commands with terminal output display
+- **Permission Management**: Configurable auto-approve policies for agent actions
+- **Protocol Traffic Logging**: Inspect all ACP JSON-RPC messages with request/response/notification labels
+- **Agent Registry**: Browse and discover available ACP agents
+- **Chat Persistence**: Conversations are preserved when switching panels
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Quick Start
 
-## Add your files
+1. Install: [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=formulahendry.acp-client) | [Open in VS Code](https://vscode.dev/redirect?url=vscode%3Aextension%2Fformulahendry.acp-client) | [Open VSX Marketplace](https://open-vsx.org/extension/formulahendry/acp-client)
+2. Open the ACP Client panel from the Activity Bar (ACP icon)
+3. Click **+** to add an agent configuration, or use the defaults
+4. Click an agent to connect
+5. Start chatting!
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## Requirements
 
+- Node.js 18+ (for spawning agent processes)
+- An ACP-compatible agent installed or available via `npx`
+
+## Pre-configured Agents
+
+The extension comes with default configurations for:
+
+| Agent | Command |
+|-------|---------|
+| GitHub Copilot | `npx @github/copilot-language-server@latest --acp` |
+| Claude Code | `npx @agentclientprotocol/claude-agent-acp@latest` |
+| Gemini CLI | `npx @google/gemini-cli@latest --experimental-acp` |
+| Qwen Code | `npx @qwen-code/qwen-code@latest --acp --experimental-skills` |
+| Auggie CLI | `npx @augmentcode/auggie@latest --acp` |
+| Qoder CLI | `npx @qoder-ai/qodercli@latest --acp` |
+| Codex CLI | `npx @zed-industries/codex-acp@latest` |
+| OpenCode | `npx opencode-ai@latest acp` |
+| OpenClaw | `npx openclaw acp` |
+| [Kiro CLI](https://kiro.dev/docs/cli/acp/) | `kiro-cli acp` |
+| [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/acp) | `hermes acp` |
+
+You can add custom agent configurations in settings.
+
+> **Note on Hermes Agent**: Hermes is a Python package, not an npm package. Install it via the [Hermes Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart) (Linux/macOS/WSL2 only — Windows requires [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install)). Make sure `hermes` is on your `PATH` and launch VS Code from the same shell/venv. Configure credentials with `hermes model`.
+
+## Extension Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `acp.agents` | *(11 agents)* | Agent configurations. Each key is the agent name, value has `command`, `args`, and `env`. |
+| `acp.autoApprovePermissions` | `ask` | How agent permission requests are handled: `ask` or `allowAll`. |
+| `acp.defaultWorkingDirectory` | `""` | Default working directory for agent sessions. Empty uses current workspace. |
+| `acp.logTraffic` | `true` | Log all ACP protocol traffic to the ACP Traffic output channel. |
+
+## Commands
+
+All commands are accessible via the Command Palette (`Ctrl+Shift+P`):
+
+| Command | Description |
+|---------|-------------|
+| `ACP: Connect to Agent` | Connect to an agent |
+| `ACP: New Conversation` | Start a new conversation with the connected agent |
+| `ACP: Send Prompt` | Send a message to the agent |
+| `ACP: Cancel Current Turn` | Cancel the current agent turn |
+| `ACP: Disconnect Agent` | Disconnect from the current agent |
+| `ACP: Restart Agent` | Restart the current agent process |
+| `ACP: Open Chat Panel` | Focus the chat webview |
+| `ACP: Add Agent Configuration` | Add a new agent to settings |
+| `ACP: Remove Agent` | Remove an agent configuration |
+| `ACP: Set Agent Mode` | Change the agent's operating mode |
+| `ACP: Set Agent Model` | Change the agent's model |
+| `ACP: Refresh Sessions` | Re-fetch the session list for an agent (also on the agent's right-click menu) |
+| `ACP: Show Log` | Open the ACP Client log output channel |
+| `ACP: Show Protocol Traffic` | Open the ACP Traffic output channel |
+| `ACP: Browse Agent Registry` | Browse the ACP agent registry |
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+A` (`Cmd+Shift+A` on Mac) | Open Chat Panel |
+| `Escape` (when turn in progress) | Cancel Current Turn |
+
+## Development
+
+### Prerequisites
+
+- Node.js 18+
+- VS Code 1.85+
+
+### Setup
+
+```bash
+git clone https://github.com/formulahendry/vscode-acp.git
+cd vscode-acp
+npm install
 ```
-cd existing_repo
-git remote add origin https://gitlab.bytebroad.com/xulian/fastopc-acp-vscode.git
-git branch -M main
-git push -uf origin main
+
+### Build & Run
+
+```bash
+npm run compile    # One-time build
+npm run watch      # Watch mode for development
 ```
 
-## Integrate with your tools
+Press `F5` in VS Code to launch the Extension Development Host.
 
-- [ ] [Set up project integrations](https://gitlab.bytebroad.com/xulian/fastopc-acp-vscode/-/settings/integrations)
+### Testing
 
-## Collaborate with your team
+```bash
+npm run pretest    # Compile tests + lint
+npm test           # Run tests
+```
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+### Packaging
 
-## Test and Deploy
+```bash
+npm run package    # Production build
+npx @vscode/vsce package   # Create .vsix
+```
 
-Use the built-in continuous integration in GitLab.
+## Architecture
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+The extension follows a modular architecture:
 
-***
+- **Core**: `AgentManager`, `ConnectionManager`, `SessionManager`, `AcpClientImpl`
+- **Handlers**: `FileSystemHandler`, `TerminalHandler`, `PermissionHandler`, `SessionUpdateHandler`
+- **UI**: `SessionTreeProvider`, `ChatWebviewProvider`, `StatusBarManager`
+- **Config**: `AgentConfig`, `RegistryClient`
+- **Utils**: `Logger`, `StreamAdapter`
 
-# Editing this README
+Communication with agents uses the ACP protocol (JSON-RPC 2.0 over stdio).
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## Known Issues
 
-## Suggestions for a good README
+- Agents must be available via the system PATH or `npx`
+- Some agents may require additional authentication setup
+- File attachment feature is not yet functional
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Links
 
-## Name
-Choose a self-explaining name for your project.
+- [ACP Client on Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=formulahendry.acp-client)
+- [Agent Client Protocol](https://agentclientprotocol.com/)
+- [GitHub Repository](https://github.com/formulahendry/vscode-acp)
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## Related Projects
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+- [ACP UI](https://github.com/formulahendry/acp-ui) — A modern, cross-platform desktop client for the Agent Client Protocol (ACP)
+- [WeChat ACP](https://github.com/formulahendry/wechat-acp) — Bridge WeChat chat messages to any ACP-compatible AI agent (Claude, Codex, Copilot, Qwen, Gemini, OpenCode and more)
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+MIT — see [LICENSE](LICENSE) for details.
