@@ -35,10 +35,16 @@ export class QuchiAuthService implements vscode.Disposable {
   }
 
   async refresh(_agentName?: string): Promise<QuchiAuthState> {
-    this.state = this.deviceAuth.refreshFromStore();
+    const signature = this.deviceAuth.getStoreSignature();
+    const next = this.deviceAuth.refreshFromStore();
+    const changed = signature !== this.lastStoreSignature
+      || next.loggedIn !== this.state.loggedIn;
+    this.state = next;
     this.lastStoreSignature = this.deviceAuth.getStoreSignature();
     this.syncSessionManager(this.state);
-    this.onDidChangeAuthStateEmitter.fire(this.getState());
+    if (changed) {
+      this.onDidChangeAuthStateEmitter.fire(this.getState());
+    }
     return this.getState();
   }
 

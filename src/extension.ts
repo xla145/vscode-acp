@@ -23,6 +23,7 @@ async function focusChatPanel(): Promise<void> {
 export function activate(context: vscode.ExtensionContext): void {
   log('ACP Client extension activating...');
   logAuth('FastOPC extension loaded — auth logs use Output channel「ACP Client」');
+  logAuth('FastOPC debug build 20260531-1518 loaded', { extensionUri: context.extensionUri.toString() });
 
   // --- Telemetry ---
   const telemetryReporter = initTelemetry();

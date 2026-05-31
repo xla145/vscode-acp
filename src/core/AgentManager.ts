@@ -94,7 +94,12 @@ export class AgentManager extends EventEmitter {
       // On macOS/Linux, use the user's login shell so that PATH includes
       // nvm, Homebrew, and other user-installed tool directories.
       const { shell, useLoginFlag } = resolveUnixShell();
-      const commandStr = [config.command, ...(config.args || [])].map(shellEscape).join(' ');
+      const args = config.args ?? [];
+      // Inline script (e.g. FastOPC nvm bootstrap): pass raw to -c — do NOT shellEscape
+      // or zsh treats the quoted string as a file path ("no such file or directory").
+      const commandStr = args.length === 0 && config.shellInlineScript
+        ? config.command
+        : [config.command, ...args].map(shellEscape).join(' ');
       const shellArgs = useLoginFlag ? ['-l', '-c', commandStr] : ['-c', commandStr];
 
       log(`Using shell: ${shell} ${shellArgs.join(' ')}`);

@@ -20,8 +20,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private updateListener: SessionUpdateListener;
   private _hasChatContent = false;
-  private authRefreshStarted = false;
   private autoConnecting = false;
+  private bootstrapInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -74,12 +74,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this.extensionUri],
     };
 
-    webviewView.webview.html = this.getHtmlContent(webviewView.webview);
-
-    // Handle messages from the webview
+    // Handle messages from the webview before assigning HTML so early ready/log
+    // messages emitted during script startup cannot be missed.
     webviewView.webview.onDidReceiveMessage(async (message) => {
       const msgType = message?.type as string | undefined;
-      if (msgType && (msgType.startsWith('quchi') || msgType === 'webviewLog' || msgType === 'ready')) {
+      if (msgType) {
         logAuth(`webview → extension: ${msgType}`, msgType === 'quchiPollAuth' ? { deviceCode: !!message.deviceCode } : undefined);
       }
       if (!msgType) {
@@ -170,6 +169,9 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           await this.quchiAuthService.signOut();
           this.sendAuthState();
           break;
+        case 'quchiSyncMain':
+          await this.bootstrapWebview();
+          break;
         case 'persistMessages':
           // Webview persists chat history for a session to survive VS Code restarts
           if (message.sessionId && Array.isArray(message.messages) && this.chatHistoryStore) {
@@ -181,8 +183,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           }
           break;
         case 'ready':
-          await this.refreshExistingAuth();
-          this.sendCurrentState();
+          logAuth('[Webview] ready');
+          await this.bootstrapWebview();
           break;
         case 'renderMarkdown': {
           // Webview requests markdown rendering for history items
@@ -195,12 +197,20 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           break;
         }
         default:
-          if (msgType.startsWith('quchi') || msgType === 'webviewLog') {
-            logAuth(`unhandled webview message type: ${msgType}`);
-          }
+          logAuth(`unhandled webview message type: ${msgType}`);
           break;
       }
     });
+
+    const html = this.getHtmlContent(webviewView.webview);
+    logAuth('resolveWebviewView html prepared 20260531-1518', {
+      length: html.length,
+      hasScriptStart: html.includes("dbg('script start')"),
+      hasUnsafeInline: html.includes("script-src 'unsafe-inline'"),
+      hasDirectHomeSend: html.includes('startHomePrompt'),
+    });
+    webviewView.webview.html = html;
+    logAuth('resolveWebviewView html assigned 20260531-1518');
 
     const updateSelection = () => this.sendSelectionUpdate();
     const selectionSub = vscode.window.onDidChangeTextEditorSelection(updateSelection);
@@ -212,11 +222,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     });
     updateSelection();
 
-    // Push auth/UI state even if webview "ready" is delayed or lost (retained context).
-    void this.refreshExistingAuth().then(() => {
-      this.sendCurrentState();
-      this.notifyAuthChanged();
-    });
+    // Push auth/UI state even if webview "ready" is delayed (retained context).
+    void this.bootstrapWebview();
   }
 
   /** Push active editor selection info to the webview footer. */
@@ -393,13 +400,48 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Notify webview that auth state changed.
+   * Notify webview that auth state changed (must NOT call bootstrapWebview — avoids infinite loop).
    */
   notifyAuthChanged(): void {
     this.sendAuthState();
+    this.sendCurrentState();
   }
 
   private sendAuthState(): void {
+    this.postAuthStateOnly();
+    void this.maybeAutoConnectFastOpc();
+  }
+
+  /**
+   * Reload Quchi token from disk (TUI /login), connect agent if needed, sync webview UI.
+   */
+  private bootstrapWebview(): Promise<void> {
+    if (this.bootstrapInFlight) {
+      return this.bootstrapInFlight;
+    }
+    this.bootstrapInFlight = this.runBootstrapWebview().finally(() => {
+      this.bootstrapInFlight = null;
+    });
+    return this.bootstrapInFlight;
+  }
+
+  private async runBootstrapWebview(): Promise<void> {
+    try {
+      await this.quchiAuthService.refresh(FASTOPC_AGENT_NAME);
+      logAuth('bootstrapWebview', { loggedIn: this.quchiAuthService.isAuthenticated() });
+      if (this.quchiAuthService.isAuthenticated()) {
+        await this.maybeAutoConnectFastOpc();
+      }
+      this.postAuthStateOnly();
+      this.sendCurrentState();
+    } catch (e) {
+      logError('bootstrapWebview failed', e);
+      this.postAuthStateOnly();
+    }
+  }
+
+  /** Push auth UI without triggering auto-connect again. */
+  private postAuthStateOnly(): void {
     this.postMessage({
       type: 'authState',
       requireLogin: true,
@@ -408,18 +450,6 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       quchi: this.quchiAuthService.getState(),
       autoConnectAgent: FASTOPC_AGENT_NAME,
     });
-    void this.maybeAutoConnectFastOpc();
-  }
-
-  private async refreshExistingAuth(): Promise<void> {
-    if (this.authRefreshStarted || this.quchiAuthService.isAuthenticated()) return;
-    this.authRefreshStarted = true;
-    try {
-      await this.quchiAuthService.refresh(FASTOPC_AGENT_NAME);
-      this.sendAuthState();
-    } catch (e) {
-      logError('Quchi auth refresh failed', e);
-    }
   }
 
   private async maybeAutoConnectFastOpc(): Promise<void> {
@@ -676,13 +706,19 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private getHtmlContent(webview: vscode.Webview): string {
     const nonce = getNonce();
     const homeSkillsJson = JSON.stringify(this.getHomeSkills());
+    const initialLoggedIn = this.quchiAuthService.isAuthenticated();
+    const initialAuthJson = JSON.stringify({
+      loggedIn: initialLoggedIn,
+      quchi: this.quchiAuthService.getState(),
+      autoConnectAgent: FASTOPC_AGENT_NAME,
+    });
 
     return /*html*/ `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'unsafe-inline';">
   <title>ACP Chat</title>
   <style>
     :root {
@@ -1932,7 +1968,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       padding: 28px 24px;
       overflow-y: auto;
     }
-    .login-gate.visible { display: flex; }
+    .login-gate.visible { display: flex; pointer-events: auto; }
+    .login-gate:not(.visible) {
+      display: none !important;
+      pointer-events: none !important;
+      visibility: hidden;
+    }
     .login-screen {
       width: 100%;
       max-width: 300px;
@@ -2064,7 +2105,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
   <!-- Quchi login gate -->
-  <div class="login-gate visible" id="loginGate">
+  <div class="login-gate${initialLoggedIn ? '' : ' visible'}" id="loginGate">
     <div class="login-screen">
       <div class="login-logo">
         <div class="logo-icon">🤖</div>
@@ -2245,6 +2286,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       return HOME_SKILLS.find(s => s.id === id);
     }
     const vscode = acquireVsCodeApi();
+    const INITIAL_AUTH = ${initialAuthJson};
     function dbg(msg) {
       try { vscode.postMessage({ type: 'webviewLog', message: msg }); } catch (e) {
         console.error('[FastOPC Webview]', msg, e);
@@ -2384,6 +2426,24 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
 
+    function enterMainWorkspace() {
+      if (loginGate) {
+        loginGate.classList.remove('visible');
+        loginGate.setAttribute('aria-hidden', 'true');
+      }
+      const overlayEl = document.getElementById('loadOverlay');
+      if (overlayEl) overlayEl.classList.remove('visible');
+      const backdropEl = document.getElementById('historyBackdrop');
+      if (backdropEl) backdropEl.classList.remove('open');
+      if (inputArea) inputArea.classList.remove('disabled');
+      if (promptInput) {
+        promptInput.disabled = false;
+        promptInput.removeAttribute('disabled');
+      }
+      if (sendStopBtn) sendStopBtn.disabled = false;
+      if (emptyState && !hasActiveSession) emptyState.style.display = '';
+    }
+
     function applyAuthState(auth) {
       if (!auth) return;
       authLoggedIn = auth.loggedIn === true;
@@ -2399,8 +2459,14 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         avatarBtn.title = authLoggedIn ? 'Quchi 已授权 — 点击退出' : '登录 Quchi';
       }
 
+      if (loginSubmitBtn) {
+        loginSubmitBtn.textContent = authLoggedIn ? '进入主页' : '登录 Quchi';
+      }
+
       if (loginNoteText && auth.autoConnectAgent) {
-        loginNoteText.innerHTML = 'Quchi 授权成功后将自动连接 <strong>' + escapeHtml(auth.autoConnectAgent) + '</strong>。';
+        loginNoteText.innerHTML = authLoggedIn
+          ? 'Quchi 已授权，已连接 <strong>' + escapeHtml(auth.autoConnectAgent) + '</strong>。'
+          : 'Quchi 授权成功后将自动连接 <strong>' + escapeHtml(auth.autoConnectAgent) + '</strong>。';
       }
 
       renderQuchiDeviceState(quchiAuth);
@@ -2410,7 +2476,15 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         setLoginBusy(false);
         if (quchiPollTimer) clearInterval(quchiPollTimer);
         quchiPollTimer = null;
+        enterMainWorkspace();
       }
+    }
+
+    if (INITIAL_AUTH && INITIAL_AUTH.loggedIn) {
+      authLoggedIn = true;
+      quchiAuth = INITIAL_AUTH.quchi || null;
+      dbg('INITIAL_AUTH: already logged in (e.g. TUI), skip login gate');
+      applyAuthState(INITIAL_AUTH);
     }
 
     function scheduleQuchiPoll() {
@@ -2425,7 +2499,9 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     function startQuchiLogin() {
       dbg('startQuchiLogin click authLoggedIn=' + authLoggedIn + ' loginBusy=' + loginBusy);
       if (authLoggedIn) {
-        dbg('startQuchiLogin skipped: already logged in');
+        dbg('startQuchiLogin: already logged in → sync main');
+        enterMainWorkspace();
+        vscode.postMessage({ type: 'quchiSyncMain' });
         return;
       }
       showLoginError('');
@@ -2554,6 +2630,18 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       promptInput.focus();
     }
 
+    function startHomePrompt(text) {
+      if (!promptInput || typeof text !== 'string' || !text.trim()) return;
+      if (!hasActiveSession) {
+        focusComposer(text);
+        vscode.postMessage({ type: 'connectAgent' });
+        return;
+      }
+      promptInput.value = text;
+      resizePromptInput();
+      handleSend();
+    }
+
     function setHomeMenuActive(action) {
       if (!homeMenu) return;
       homeMenu.querySelectorAll('.home-menu-item').forEach(el => {
@@ -2573,8 +2661,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         return;
       }
       const skill = homeSkillById(action);
-      if (skill && skill.skillPath) {
-        focusComposer('/' + skill.skillPath + ' ');
+      if (skill && skill.prompt) {
+        startHomePrompt(skill.prompt);
         return;
       }
     }
@@ -2591,10 +2679,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
     // Build session-home skill chips
     if (sessionHome) {
-      const chips = HOME_SKILLS.filter(s => s.skillPath).map(s =>
-        '<button class="skill-chip" type="button" data-skill-path="' + escapeAttr(s.skillPath) + '" title="' + escapeAttr(s.description) + '">' +
+      const chips = HOME_SKILLS.filter(s => s.prompt).map(s =>
+        '<button class="skill-chip" type="button" data-skill-id="' + escapeAttr(s.id) + '" title="' + escapeAttr(s.description) + '">' +
         escapeHtml(s.label) +
-        '<span class="sc-slash">/' + escapeHtml(s.skillPath) + '</span>' +
+        (s.skillPath ? '<span class="sc-slash">' + escapeHtml(s.skillPath) + '</span>' : '') +
         '</button>'
       ).join('');
       sessionHome.innerHTML =
@@ -2602,15 +2690,13 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         '<div class="session-home-chips">' + chips + '</div>';
 
       sessionHome.addEventListener('click', e => {
-        const chip = e.target.closest('.skill-chip');
+        const target = e.target;
+        if (!(target instanceof Element)) return;
+        const chip = target.closest('.skill-chip');
         if (!chip) return;
-        const path = chip.dataset.skillPath;
-        if (!path) return;
-        const slash = '/' + path + ' ';
-        promptInput.value = slash;
-        resizePromptInput();
-        promptInput.focus();
-        promptInput.selectionStart = promptInput.selectionEnd = slash.length;
+        const skill = homeSkillById(chip.dataset.skillId);
+        if (!skill || !skill.prompt) return;
+        startHomePrompt(skill.prompt);
       });
     }
 
@@ -2949,8 +3035,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    // Start with input disabled
-    if (inputArea) inputArea.classList.add('disabled');
+    // Composer disabled until auth + session; skip if TUI already logged in (INITIAL_AUTH)
+    if (inputArea && !authLoggedIn) inputArea.classList.add('disabled');
     let currentAssistantEl = null;
     let currentAssistantText = '';
     let currentTurnEl = null;       // .turn container for current response
@@ -3941,8 +4027,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
     function buildDiffHtml(diffContent) {
       const path = diffContent.path || '';
-      const oldLines = (diffContent.oldText || '').split('\n');
-      const newLines = (diffContent.newText || '').split('\n');
+      const oldLines = (diffContent.oldText || '').split('\\n');
+      const newLines = (diffContent.newText || '').split('\\n');
       const lines = diffContent.oldText != null
         ? computeLineDiff(oldLines, newLines)
         : newLines.map(t => ({ type: 'add', text: t }));
@@ -4232,7 +4318,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       if (bannerAgent) bannerAgent.textContent = ss.agentName || '';
       if (bannerCwd) bannerCwd.textContent = ss.cwd || '';
       if (inputArea) inputArea.classList.remove('disabled');
-      promptInput.disabled = false;
+      if (promptInput) {
+        promptInput.disabled = false;
+        promptInput.removeAttribute('disabled');
+      }
+      if (sendStopBtn) sendStopBtn.disabled = false;
     }
 
     function showNoSession() {
@@ -4243,7 +4333,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       if (emptyState) emptyState.style.display = '';
       renderAgentCards(configuredAgents);
       if (inputArea) inputArea.classList.remove('disabled');
-      promptInput.disabled = false;
+      if (promptInput) {
+        promptInput.disabled = false;
+        promptInput.removeAttribute('disabled');
+      }
+      if (sendStopBtn) sendStopBtn.disabled = false;
       modePickerWrap.classList.add('hidden');
       modelPickerWrap.classList.add('hidden');
       setConfigOptionsState([]);
@@ -4256,6 +4350,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       switch (msg.type) {
         case 'authState':
           applyAuthState(msg);
+          if (msg.loggedIn) enterMainWorkspace();
           break;
 
         case 'quchiAuthState':
@@ -4297,6 +4392,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           } else {
             showNoSession();
           }
+          if (authLoggedIn) enterMainWorkspace();
           break;
 
         case 'file-attached':
