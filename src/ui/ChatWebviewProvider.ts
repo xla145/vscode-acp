@@ -2437,8 +2437,11 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         openHistoryPanel();
         return;
       }
-      const prompt = HOME_PROMPTS[action];
-      if (prompt) focusComposer(prompt);
+      const skill = homeSkillById(action);
+      if (skill && skill.skillPath) {
+        focusComposer('/' + skill.skillPath + ' ');
+        return;
+      }
     }
 
     if (homeMenu) {
@@ -2448,6 +2451,31 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         const item = target.closest('.home-menu-item');
         if (!item || !item.dataset.action) return;
         handleHomeAction(item.dataset.action);
+      });
+    }
+
+    // Build session-home skill chips
+    if (sessionHome) {
+      const chips = HOME_SKILLS.filter(s => s.skillPath).map(s =>
+        '<button class="skill-chip" type="button" data-skill-path="' + escapeAttr(s.skillPath) + '" title="' + escapeAttr(s.description) + '">' +
+        escapeHtml(s.label) +
+        '<span class="sc-slash">/' + escapeHtml(s.skillPath) + '</span>' +
+        '</button>'
+      ).join('');
+      sessionHome.innerHTML =
+        '<div class="session-home-title">快速开始</div>' +
+        '<div class="session-home-chips">' + chips + '</div>';
+
+      sessionHome.addEventListener('click', e => {
+        const chip = e.target.closest('.skill-chip');
+        if (!chip) return;
+        const path = chip.dataset.skillPath;
+        if (!path) return;
+        const slash = '/' + path + ' ';
+        promptInput.value = slash;
+        resizePromptInput();
+        promptInput.focus();
+        promptInput.selectionStart = promptInput.selectionEnd = slash.length;
       });
     }
 
@@ -2974,6 +3002,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         messagesEl.appendChild(emptyState);
         emptyState.style.display = 'none';
       }
+      if (sessionHome) { messagesEl.appendChild(sessionHome); sessionHome.style.display = 'none'; }
       if (loadOverlay) loadOverlay.classList.add('visible');
       if (inputArea) inputArea.classList.add('disabled');
       setProcessing(false);
@@ -3045,6 +3074,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       // Clear the message area
       messagesEl.innerHTML = '';
       if (emptyState) messagesEl.appendChild(emptyState);
+      if (sessionHome) { messagesEl.appendChild(sessionHome); sessionHome.style.display = 'none'; }
 
       const history = Array.isArray(msg.messages) ? msg.messages : [];
       chatHistory = history;
@@ -3638,6 +3668,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
     function hideEmpty() {
       if (emptyState) emptyState.style.display = 'none';
+      if (sessionHome) sessionHome.style.display = 'none';
     }
 
     function scrollToBottom() {
@@ -4055,6 +4086,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     function showSessionConnectedFromState(ss) {
       hasActiveSession = true;
       hideEmpty();
+      // Show skill shortcuts when chat is empty
+      if (sessionHome && chatHistory.length === 0) {
+        sessionHome.style.display = '';
+      }
       // Update connected banner
       if (sessionBanner) sessionBanner.classList.add('visible');
       if (bannerAgent) bannerAgent.textContent = ss.agentName || '';
@@ -4227,6 +4262,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           messagesEl.innerHTML = '';
           messagesEl.appendChild(emptyState);
           if (emptyState) emptyState.style.display = '';
+          if (sessionHome) { messagesEl.appendChild(sessionHome); sessionHome.style.display = 'none'; }
           if (inputArea) inputArea.classList.add('disabled');
           modePickerWrap.classList.add('hidden');
           modelPickerWrap.classList.add('hidden');
