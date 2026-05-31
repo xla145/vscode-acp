@@ -405,7 +405,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
   private async handleQuchiSignIn(agentName?: string): Promise<void> {
     try {
-      const state = await this.quchiAuthService.signIn(agentName);
+      const state = await this.withAuthTimeout(
+        this.quchiAuthService.signIn(agentName),
+        '连接 fastopc 超时，请确认已安装 fastopc 且 Node.js >= 22.5。',
+      );
       this.sendAuthState();
       this.postMessage({ type: 'quchiAuthState', state });
       await this.maybeAutoConnectFastOpc();
@@ -420,7 +423,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
   private async handleQuchiPollAuth(agentName: string | undefined, deviceCode: string): Promise<void> {
     try {
-      const state = await this.quchiAuthService.poll(agentName, deviceCode);
+      const state = await this.withAuthTimeout(
+        this.quchiAuthService.poll(agentName, deviceCode),
+        'Quchi 授权轮询超时，请重试。',
+      );
       this.sendAuthState();
       this.postMessage({ type: 'quchiAuthState', state });
       await this.maybeAutoConnectFastOpc();
@@ -499,6 +505,22 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
    */
   private postMessage(message: any): void {
     this.view?.webview.postMessage(message);
+  }
+
+  private withAuthTimeout<T>(promise: Promise<T>, message: string, ms = 45000): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(message)), ms);
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
   }
 
   /**
@@ -2279,7 +2301,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
     function setLoginBusy(busy) {
       loginBusy = busy;
-      if (loginSubmitBtn) loginSubmitBtn.disabled = busy;
+      if (loginSubmitBtn) {
+        loginSubmitBtn.disabled = busy;
+        loginSubmitBtn.textContent = busy ? '正在连接 fastopc…' : '登录 Quchi';
+      }
     }
 
     function renderQuchiDeviceState(state) {
@@ -4125,6 +4150,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           quchiAuth = msg.state;
           renderQuchiDeviceState(quchiAuth);
           scheduleQuchiPoll();
+          setLoginBusy(false);
           if (quchiAuth && quchiAuth.loggedIn) applyAuthState({ loggedIn: true, quchi: quchiAuth });
           break;
 

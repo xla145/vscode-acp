@@ -160,60 +160,39 @@ export class SessionManager extends EventEmitter {
   async refreshQuchiAuth(agentName: string): Promise<QuchiAuthState> {
     const connInfo = await this.ensureAuthConnection(agentName);
     const method = this.getQuchiAuthMethod(connInfo);
-    this.quchiAuthState = method
-      ? { loggedIn: false, pending: false }
-      : { loggedIn: true, pending: false };
+    if (!method) {
+      this.quchiAuthState = await this.probeQuchiAuth(connInfo);
+    } else {
+      this.quchiAuthState = { loggedIn: false, pending: false };
+    }
     this.emit('quchi-auth-changed', this.getQuchiAuthState());
     return this.getQuchiAuthState();
   }
 
   async startQuchiAuth(agentName: string): Promise<QuchiAuthState> {
     const connInfo = await this.ensureAuthConnection(agentName);
-    const method = this.getQuchiAuthMethod(connInfo);
-    if (!method) {
-      this.quchiAuthState = { loggedIn: true, pending: false };
-      this.emit('quchi-auth-changed', this.getQuchiAuthState());
-      return this.getQuchiAuthState();
-    }
+    const method = this.requireQuchiAuthMethod(connInfo);
 
     const response = await connInfo.connection.authenticate({ methodId: method.id });
     const meta = ((response as any)._meta ?? {}) as QuchiAuthState & { selectedMode?: string; status?: string };
-    const selectedModelId = meta.selectedModelId ?? meta.selectedMode;
-    this.quchiAuthState = {
-      loggedIn: selectedModelId !== undefined || meta.loggedIn === true || meta.status === 'success',
-      pending: meta.status !== 'success',
-      deviceCode: meta.deviceCode,
-      userCode: meta.userCode,
-      verificationUri: meta.verificationUri,
-      interval: meta.interval,
-      expiresIn: meta.expiresIn,
-      selectedModelId,
-    };
+    this.quchiAuthState = this.parseQuchiAuthMeta(meta);
     this.emit('quchi-auth-changed', this.getQuchiAuthState());
     return this.getQuchiAuthState();
   }
 
   async pollQuchiAuth(agentName: string, deviceCode: string): Promise<QuchiAuthState> {
     const connInfo = await this.ensureAuthConnection(agentName);
-    const method = this.getQuchiAuthMethod(connInfo);
-    if (!method) {
-      this.quchiAuthState = { loggedIn: true, pending: false };
-      this.emit('quchi-auth-changed', this.getQuchiAuthState());
-      return this.getQuchiAuthState();
-    }
+    const method = this.requireQuchiAuthMethod(connInfo);
 
     const response = await connInfo.connection.authenticate({ methodId: method.id, _meta: { deviceCode } } as any);
     const meta = ((response as any)._meta ?? {}) as QuchiAuthState & { selectedMode?: string; status?: string };
     this.quchiAuthState = {
-      loggedIn: meta.status === 'success',
-      pending: meta.status === 'pending',
+      ...this.parseQuchiAuthMeta(meta),
       deviceCode,
-      userCode: this.quchiAuthState.userCode,
-      verificationUri: this.quchiAuthState.verificationUri,
-      interval: this.quchiAuthState.interval,
-      expiresIn: this.quchiAuthState.expiresIn,
-      selectedModelId: meta.selectedModelId ?? meta.selectedMode,
-      error: meta.status === 'expired' ? 'Quchi 授权已过期，请重新登录。' : undefined,
+      userCode: this.quchiAuthState.userCode ?? meta.userCode,
+      verificationUri: this.quchiAuthState.verificationUri ?? meta.verificationUri,
+      interval: this.quchiAuthState.interval ?? meta.interval,
+      expiresIn: this.quchiAuthState.expiresIn ?? meta.expiresIn,
     };
     this.emit('quchi-auth-changed', this.getQuchiAuthState());
     return this.getQuchiAuthState();
@@ -229,6 +208,47 @@ export class SessionManager extends EventEmitter {
     return (methods as Array<any>).find((method) =>
       method.id === 'quchi-device-code' || method._meta?.fastopcAuthType === 'quchi_device_code'
     ) ?? null;
+  }
+
+  private requireQuchiAuthMethod(connInfo: ConnectionInfo): { id: string; name: string } {
+    const method = this.getQuchiAuthMethod(connInfo);
+    if (method) {
+      return method;
+    }
+    throw new Error(
+      '当前 fastopc 未提供 Quchi 授权（authMethods 为空）。请安装 Quchi 版 fastopc 并确保 Node.js >= 22.5：npm install -g fastopc',
+    );
+  }
+
+  /** Agent 已登录时 initialize 可能不返回 authMethods，用 authenticate 探测。 */
+  private async probeQuchiAuth(connInfo: ConnectionInfo): Promise<QuchiAuthState> {
+    try {
+      const response = await connInfo.connection.authenticate({ methodId: 'quchi-device-code' });
+      return this.parseQuchiAuthMeta(((response as any)._meta ?? {}) as QuchiAuthState & {
+        selectedMode?: string;
+        status?: string;
+      });
+    } catch {
+      return { loggedIn: false, pending: false };
+    }
+  }
+
+  private parseQuchiAuthMeta(
+    meta: QuchiAuthState & { selectedMode?: string; status?: string },
+  ): QuchiAuthState {
+    const selectedModelId = meta.selectedModelId ?? meta.selectedMode;
+    const loggedIn = selectedModelId !== undefined || meta.loggedIn === true || meta.status === 'success';
+    return {
+      loggedIn,
+      pending: !loggedIn && meta.status !== 'expired',
+      deviceCode: meta.deviceCode,
+      userCode: meta.userCode,
+      verificationUri: meta.verificationUri,
+      interval: meta.interval,
+      expiresIn: meta.expiresIn,
+      selectedModelId,
+      error: meta.status === 'expired' ? 'Quchi 授权已过期，请重新登录。' : meta.error,
+    };
   }
 
   private async ensureAuthConnection(agentName: string): Promise<ConnectionInfo> {
