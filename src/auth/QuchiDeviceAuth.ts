@@ -44,8 +44,7 @@ export class QuchiDeviceAuth {
     if (!device.deviceCode || !device.userCode) {
       throw new Error('Quchi 未返回有效授权码，请检查网络或 client 配置。');
     }
-    const verificationUri = device.verificationUri
-      || `https://www.quchiai.com/activate?user_code=${encodeURIComponent(device.userCode)}`;
+    const verificationUri = `https://www.quchiai.com/activate?user_code=${encodeURIComponent(device.userCode)}`;
     return {
       loggedIn: false,
       pending: true,
